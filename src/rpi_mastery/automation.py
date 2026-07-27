@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -15,7 +16,7 @@ class Event:
     timestamp: datetime
 
     @classmethod
-    def now(cls, kind: str, value: Any, source: str) -> "Event":
+    def now(cls, kind: str, value: Any, source: str) -> Event:
         return cls(kind, value, source, datetime.now(timezone.utc))
 
 
