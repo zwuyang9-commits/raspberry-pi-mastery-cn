@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import datetime, timedelta, timezone
 
 from rpi_mastery.automation import Action, Event, Rule, RuleEngine
+from rpi_mastery.health import DeviceHealthMonitor
 
 
 def build_engine() -> RuleEngine:
@@ -41,6 +43,27 @@ def run_demo() -> None:
     for event in events:
         for action in engine.evaluate(event):
             print(json.dumps(action.__dict__, ensure_ascii=False))
+
+    monitor = DeviceHealthMonitor()
+    now = datetime.now(timezone.utc)
+    monitor.record(
+        "water-valve",
+        expected_interval=timedelta(seconds=30),
+        critical=True,
+        seen_at=now - timedelta(seconds=75),
+    )
+    for report in monitor.inspect_all(now=now):
+        print(
+            json.dumps(
+                {
+                    "device": report.device_id,
+                    "status": report.status.value,
+                    "message": report.message,
+                    "requires_safe_state": report.requires_safe_state,
+                },
+                ensure_ascii=False,
+            )
+        )
 
 
 if __name__ == "__main__":
