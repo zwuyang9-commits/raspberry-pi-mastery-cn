@@ -15,6 +15,7 @@
 | 3 | 局域网设备 API | FastAPI、远程控制、健康检查 |
 | 4 | 边缘视觉哨兵 | 摄像头、事件检测、隐私优先设计 |
 | 5 | 离线智能中枢 | 规则引擎、故障降级、自动化决策 |
+| 6 | 本地能源调度器 | 分时电价、太阳能利用、负载优先级 |
 
 完整课程见 [`docs/CURRICULUM.md`](docs/CURRICULUM.md)，接线安全见
 [`docs/SAFETY.md`](docs/SAFETY.md)。
@@ -46,6 +47,12 @@ python projects/01_led_breathing/main.py --simulate --cycles 2
 
 ```bash
 python projects/05_resilient_home_hub/main.py --simulate
+```
+
+运行能源调度演示：
+
+```bash
+python projects/06_local_energy_scheduler/main.py
 ```
 
 运行局域网 API：
