@@ -2,14 +2,14 @@
 
 from .automation import Action, Event, Rule, RuleEngine
 from .hardware import DigitalOutput, SimulatedDigitalOutput
-from .health import DeviceHeartbeat, DeviceHealthMonitor, DeviceStatus
+from .health import DeviceHealthMonitor, DeviceHeartbeat, DeviceStatus
 
 __all__ = [
     "Action",
-    "DigitalOutput",
-    "DeviceHeartbeat",
     "DeviceHealthMonitor",
+    "DeviceHeartbeat",
     "DeviceStatus",
+    "DigitalOutput",
     "Event",
     "Rule",
     "RuleEngine",

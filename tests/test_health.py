@@ -2,7 +2,6 @@ from datetime import datetime, timedelta, timezone
 
 from rpi_mastery.health import DeviceHealthMonitor, DeviceStatus
 
-
 NOW = datetime(2026, 7, 28, 12, 0, tzinfo=timezone.utc)
 
 
