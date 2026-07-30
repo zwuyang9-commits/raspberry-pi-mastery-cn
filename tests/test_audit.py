@@ -4,7 +4,6 @@ import pytest
 
 from rpi_mastery.audit import AuditLog, AuditLogCorrupted
 
-
 NOW = datetime(2026, 7, 30, 8, 0, tzinfo=timezone.utc)
 
 
