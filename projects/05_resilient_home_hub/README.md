@@ -12,7 +12,9 @@
 
 ```bash
 python main.py --simulate
+python main.py --simulate --audit-log data/home-hub.jsonl
 ```
 
 生产扩展应加入持久化队列、设备心跳、看门狗、MQTT 身份验证和手动急停。
 示例已经提供本地心跳监控；生产环境还应把状态持久化，并把告警送到独立通道。
+指定 `--audit-log` 后，传感器事件、规则动作和设备状态会追加到本地 JSONL 文件。
