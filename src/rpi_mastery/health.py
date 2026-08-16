@@ -7,6 +7,13 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 
 
+def _as_utc(value: datetime) -> datetime:
+    """Return an aware UTC time, treating naive values as UTC."""
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 class DeviceStatus(str, Enum):
     ONLINE = "online"
     LATE = "late"
@@ -47,9 +54,15 @@ class DeviceHealthMonitor:
     ) -> None:
         if expected_interval.total_seconds() <= 0:
             raise ValueError("expected_interval must be positive")
+
+        heartbeat_time = _as_utc(seen_at or datetime.now(timezone.utc))
+        previous = self._heartbeats.get(device_id)
+        if previous is not None and heartbeat_time < previous.seen_at:
+            return
+
         self._heartbeats[device_id] = DeviceHeartbeat(
             device_id=device_id,
-            seen_at=seen_at or datetime.now(timezone.utc),
+            seen_at=heartbeat_time,
             expected_interval=expected_interval,
             critical=critical,
         )
@@ -70,7 +83,7 @@ class DeviceHealthMonitor:
                 False,
             )
 
-        current_time = now or datetime.now(timezone.utc)
+        current_time = _as_utc(now or datetime.now(timezone.utc))
         age = current_time - heartbeat.seen_at
         expected = heartbeat.expected_interval
 

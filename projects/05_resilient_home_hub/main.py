@@ -10,6 +10,12 @@ from rpi_mastery.automation import Action, Event, Rule, RuleEngine
 from rpi_mastery.health import DeviceHealthMonitor
 
 
+def is_active_leak(event: Event) -> bool:
+    if not isinstance(event.value, bool):
+        raise ValueError("water_leak 事件的 value 必须是布尔值")
+    return event.value
+
+
 def build_engine() -> RuleEngine:
     return RuleEngine(
         [
@@ -28,7 +34,7 @@ def build_engine() -> RuleEngine:
             Rule(
                 "water-leak",
                 "water_leak",
-                lambda event: bool(event.value),
+                is_active_leak,
                 lambda event: Action("water_valve", "close", True, "检测到漏水，进入安全状态"),
             ),
         ]

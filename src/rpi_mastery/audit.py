@@ -10,6 +10,16 @@ from pathlib import Path
 from typing import Any
 
 
+def _as_utc(value: datetime) -> datetime:
+    """Return a datetime that is safe to compare with other audit timestamps."""
+
+    if not isinstance(value, datetime):
+        raise TypeError("timestamp must be a datetime")
+    if value.tzinfo is None or value.utcoffset() is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 @dataclass(frozen=True)
 class AuditEntry:
     timestamp: datetime
@@ -45,9 +55,13 @@ class AuditLog:
             raise ValueError("kind cannot be empty")
         if not source.strip():
             raise ValueError("source cannot be empty")
+        if not isinstance(payload, dict):
+            raise TypeError("payload must be a dictionary")
 
         entry = AuditEntry(
-            timestamp=timestamp or datetime.now(timezone.utc),
+            timestamp=_as_utc(
+                timestamp if timestamp is not None else datetime.now(timezone.utc)
+            ),
             kind=kind,
             source=source,
             payload=dict(payload),
@@ -74,6 +88,7 @@ class AuditLog:
     ) -> list[AuditEntry]:
         if limit is not None and limit < 1:
             raise ValueError("limit must be positive")
+        since_utc = _as_utc(since) if since is not None else None
         if not self.path.exists():
             return []
 
@@ -84,18 +99,34 @@ class AuditLog:
                     continue
                 try:
                     raw = json.loads(line)
+                    if not isinstance(raw, dict):
+                        raise TypeError("audit record must be a JSON object")
+
+                    raw_timestamp = raw["timestamp"]
+                    raw_kind = raw["kind"]
+                    raw_source = raw["source"]
+                    raw_payload = raw["payload"]
+                    if not isinstance(raw_timestamp, str):
+                        raise TypeError("timestamp must be a string")
+                    if not isinstance(raw_kind, str) or not raw_kind.strip():
+                        raise TypeError("kind must be a non-empty string")
+                    if not isinstance(raw_source, str) or not raw_source.strip():
+                        raise TypeError("source must be a non-empty string")
+                    if not isinstance(raw_payload, dict):
+                        raise TypeError("payload must be a JSON object")
+
                     entry = AuditEntry(
-                        timestamp=datetime.fromisoformat(raw["timestamp"]),
-                        kind=str(raw["kind"]),
-                        source=str(raw["source"]),
-                        payload=dict(raw["payload"]),
+                        timestamp=_as_utc(datetime.fromisoformat(raw_timestamp)),
+                        kind=raw_kind,
+                        source=raw_source,
+                        payload=dict(raw_payload),
                     )
                 except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
                     raise AuditLogCorrupted(self.path, line_number) from error
 
                 if kind is not None and entry.kind != kind:
                     continue
-                if since is not None and entry.timestamp < since:
+                if since_utc is not None and entry.timestamp < since_utc:
                     continue
                 entries.append(entry)
 
