@@ -4,15 +4,40 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "rpi-mastery"
-version = "0.1.0"
-description = "中文树莓派从入门到精通课程与离线智能中枢"
+version = "0.2.0"
+description = "树莓派本地自动化的中文实验代码与笔记"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "MIT"}
+license = {file = "LICENSE"}
+authors = [
+    {name = "zwuyang9-commits"},
+]
+keywords = ["raspberry-pi", "gpio", "offline-first", "home-automation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "License :: OSI Approved :: MIT License",
+    "Natural Language :: Chinese (Simplified)",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Home Automation",
+]
 dependencies = []
 
+[project.urls]
+Homepage = "https://github.com/zwuyang9-commits/raspberry-pi-mastery-cn"
+Repository = "https://github.com/zwuyang9-commits/raspberry-pi-mastery-cn"
+Issues = "https://github.com/zwuyang9-commits/raspberry-pi-mastery-cn/issues"
+
 [project.optional-dependencies]
-pi = ["gpiozero>=2.0", "adafruit-circuitpython-dht>=4.0"]
+pi = [
+    "gpiozero>=2.0",
+    "adafruit-circuitpython-dht>=4.0",
+    "adafruit-circuitpython-bme280>=2.6",
+]
 web = ["fastapi>=0.115", "uvicorn>=0.30"]
 dev = ["pytest>=8.0", "ruff>=0.6"]
 

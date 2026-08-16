@@ -1,90 +1,98 @@
-# 树莓派：从入门到精通
+# Raspberry Pi 本地自动化笔记
 
-一套中文、可运行、可测试的树莓派学习仓库。所有核心示例都支持两种模式：
+这是我整理树莓派实验的地方。代码从 GPIO 和温湿度采集开始，后来逐渐加上了本地规则、
+设备心跳、能源计划和运行状态控制台。现在的重点不是堆很多“智能家居”名词，而是先把几个
+实际问题做扎实：断网后还能不能工作、设备掉线能不能看见、一次自动操作能不能追溯。
 
-- **真机模式**：在 Raspberry Pi 上控制 GPIO、传感器和执行器。
-- **模拟模式**：没有树莓派时也能在 Windows、macOS 或 Linux 上学习与测试。
+大部分项目可以先在普通电脑上运行。我把真机接口和模拟逻辑分开了，这样没有硬件时也能
+调试；但模拟通过不等于真机已经验证，下面把目前做到的程度写清楚。
 
-## 学习路线
+## 目前做到哪了
 
-| 阶段 | 项目 | 学到什么 |
+| 项目 | 现在可以做什么 | 硬件状态 |
 |---|---|---|
-| 0 | 环境与安全 | 系统安装、Python、GPIO 电气安全 |
-| 1 | LED 呼吸灯 | GPIO、PWM、异常退出清理 |
-| 2 | 智能环境站 | 传感器、采样、校准、CSV 数据 |
-| 3 | 局域网设备 API | FastAPI、远程控制、健康检查 |
-| 4 | 边缘视觉哨兵 | 摄像头、事件检测、隐私优先设计 |
-| 5 | 离线智能中枢 | 规则引擎、故障降级、自动化决策 |
-| 6 | 本地能源调度器 | 分时电价、太阳能利用、负载优先级 |
+| 01 呼吸灯 | 用 PWM 调整亮度，退出时关闭输出 | 有 `gpiozero` 真机适配，也可模拟 |
+| 02 环境站 | 定时采集、失败重试、追加写入 CSV | 有 DHT22/BME280 适配；默认用模拟数据 |
+| 03 局域网设备 API | 读取和修改一个输出值，提供健康检查 | 目前只接模拟输出 |
+| 04 边缘视觉哨兵 | 按置信度把检测结果变成事件 | 目前只用模拟检测结果，未接摄像头 |
+| 05 本地自动化中枢 | 规则判断、设备心跳和 JSONL 审计 | 目前是模拟事件演示 |
+| 06 能源调度器 | 按电价、光伏余量和优先级安排负载 | 只给出计划，不控制市电 |
+| 07 运行状态控制台 | 汇总状态、持久化告警、确认与恢复 | 使用模拟数据，可输出文本或 JSON |
 
-完整课程见 [`docs/CURRICULUM.md`](docs/CURRICULUM.md)，接线安全见
-[`docs/SAFETY.md`](docs/SAFETY.md)。
+课程顺序和每一步的练习记在 [`docs/CURRICULUM.md`](docs/CURRICULUM.md)，接线前先看
+[`docs/SAFETY.md`](docs/SAFETY.md)。每个项目目录也有一份短说明。
 
-## 快速开始
+## 先在电脑上跑起来
 
 ```bash
-git clone https://github.com/zwuyang9-commits/12.git
-cd 12
+git clone https://github.com/zwuyang9-commits/raspberry-pi-mastery-cn.git
+cd raspberry-pi-mastery-cn
 python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev,web]"
-pytest
 ```
 
-Windows 激活虚拟环境：
+Linux 或 macOS：
+
+```bash
+source .venv/bin/activate
+pip install -e ".[dev,web]"
+```
+
+Windows PowerShell：
 
 ```powershell
 .venv\Scripts\Activate.ps1
+pip install -e ".[dev,web]"
 ```
 
-运行模拟 LED：
+可以从这几个命令开始：
 
 ```bash
+# 模拟呼吸灯
 python projects/01_led_breathing/main.py --simulate --cycles 2
+
+# 采集 10 组模拟温湿度，结果追加到 data/environment.csv
+python projects/02_environment_station/main.py --sensor simulated --samples 10
+
+# 查看本地中枢状态；加 --json 可交给其他脚本读取
+python projects/07_local_operations_console/main.py
+python projects/07_local_operations_console/main.py --json
 ```
 
-运行智能中枢演示：
+局域网 API 需要 `web` 依赖：
 
 ```bash
-python projects/05_resilient_home_hub/main.py --simulate
+uvicorn projects.03_local_device_api.main:app --host 127.0.0.1 --port 8000
 ```
 
-运行能源调度演示：
+启动后打开 `http://127.0.0.1:8000/docs`。默认只允许本机写入；要让局域网设备发送写请求，
+需要先设置 `RPI_API_TOKEN`。这仍是实验接口，不应该直接暴露到公网。
+
+## 接温湿度传感器
+
+安装树莓派相关依赖：
 
 ```bash
-python projects/06_local_energy_scheduler/main.py
+pip install -e ".[pi]"
 ```
 
-运行局域网 API：
+DHT22 默认使用 `D4`，BME280 默认使用 I2C 地址 `0x76`：
 
 ```bash
-uvicorn projects.03_local_device_api.main:app --host 0.0.0.0 --port 8000
+python projects/02_environment_station/main.py --sensor dht22 --pin D4
+python projects/02_environment_station/main.py --sensor bme280 --i2c-address 0x76
 ```
 
-## 它真正解决什么
+具体接线、上拉电阻和 I2C 设置见
+[`projects/02_environment_station/README.md`](projects/02_environment_station/README.md)。
+我没有把“驱动已经写好”当成“所有板子都实测过”：不同传感器模块和系统镜像仍可能需要调整。
 
-这套代码想解决的不是“让 LED 闪起来”这么简单，而是怎样把一台小电脑变成真正可靠的
-本地控制中心：断网时照常工作，家庭数据留在家里，设备掉线时能及时发现，自动操作也能
-说清楚自己为什么这样做。你可以从一个传感器起步，慢慢接入本地语音、视觉、能源管理或
-无障碍设备，不需要一开始就买齐所有硬件。
+## 代码里的约定
 
-## 支持硬件
+- 输出设备关闭时回到安全状态，示例不直接驱动市电。
+- 自动化逻辑不依赖 GPIO，方便在电脑上复现问题。
+- 原始传感器数据、告警和审计记录默认留在本地。
+- 告警确认只表示“有人在处理”，设备恢复后才会关闭告警。
+- 每次新增硬件，先保留一个可重复的模拟入口。
 
-- Raspberry Pi 3B+/4/5/Zero 2 W
-- LED、按钮、蜂鸣器、继电器（必须使用合适驱动电路）
-- DHT22/BME280 等环境传感器
-- 官方 Camera Module 或 USB 摄像头
-
-## 项目原则
-
-1. 默认安全：输出引脚启动时保持关闭。
-2. 离线优先：断网不影响基本自动化。
-3. 隐私优先：原始图像和语音默认只在本地处理。
-4. 可测试：业务逻辑不依赖真实 GPIO。
-5. 可解释：每次自动决策都给出原因。
-6. 看得见故障：设备失联会产生明确告警，而不是悄悄停止工作。
-7. 留下记录：事件和动作可写入本地审计日志，方便排查误触发和断电前状态。
-
-## 许可证
-
-MIT。涉及市电、继电器、电机或电池时，请由具备资质的人员检查接线。
+更新内容记在 [`CHANGELOG.md`](CHANGELOG.md)。项目使用 MIT 许可证。涉及继电器、电机、电池或
+市电时，请使用合规器件，并让有资质的人检查接线。
