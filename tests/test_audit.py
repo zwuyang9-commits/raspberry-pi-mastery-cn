@@ -47,7 +47,7 @@ def test_audit_log_reports_corrupted_line(tmp_path):
 
 def test_audit_log_normalizes_naive_timestamps_to_utc(tmp_path):
     log = AuditLog(tmp_path / "hub.jsonl")
-    naive_timestamp = datetime(2026, 7, 30, 8, 0)
+    naive_timestamp = NOW.replace(tzinfo=None)
 
     written = log.append("event", "sensor", {}, timestamp=naive_timestamp)
     [loaded] = log.read(since=NOW)
@@ -68,7 +68,7 @@ def test_audit_log_normalizes_offset_timestamps_before_filtering(tmp_path):
     }
     path.write_text(json.dumps(record) + "\n", encoding="utf-8")
 
-    entries = AuditLog(path).read(since=datetime(2026, 7, 30, 8, 0))
+    entries = AuditLog(path).read(since=NOW.replace(tzinfo=None))
 
     assert len(entries) == 1
     assert entries[0].timestamp == NOW

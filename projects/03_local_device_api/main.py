@@ -65,11 +65,8 @@ def create_app(
     def get_output() -> dict[str, float]:
         return {"value": device_output.value}
 
-    @api.put("/output")
-    def set_output(
-        command: OutputCommand,
-        _: Annotated[None, Depends(require_write_access)],
-    ) -> dict[str, float]:
+    @api.put("/output", dependencies=[Depends(require_write_access)])
+    def set_output(command: OutputCommand) -> dict[str, float]:
         if not 0.0 <= command.value <= 1.0:
             raise HTTPException(422, "value 必须在 0 与 1 之间")
         device_output.set(command.value)

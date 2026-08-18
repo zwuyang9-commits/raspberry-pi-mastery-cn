@@ -12,7 +12,7 @@ from rpi_mastery.health import DeviceHealthMonitor
 
 def is_active_leak(event: Event) -> bool:
     if not isinstance(event.value, bool):
-        raise ValueError("water_leak 事件的 value 必须是布尔值")
+        raise TypeError("water_leak 事件的 value 必须是布尔值")
     return event.value
 
 

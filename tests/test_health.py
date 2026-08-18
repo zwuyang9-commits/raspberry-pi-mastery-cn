@@ -46,12 +46,12 @@ def test_naive_datetimes_are_treated_as_utc():
     monitor.record(
         "indoor-sensor",
         expected_interval=timedelta(seconds=30),
-        seen_at=datetime(2026, 7, 28, 11, 59, 45),
+        seen_at=(NOW - timedelta(seconds=15)).replace(tzinfo=None),
     )
 
     report = monitor.inspect(
         "indoor-sensor",
-        now=datetime(2026, 7, 28, 12, 0),
+        now=NOW.replace(tzinfo=None),
     )
 
     assert report.status is DeviceStatus.ONLINE

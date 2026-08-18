@@ -86,9 +86,9 @@ def test_acknowledgement_survives_snapshots_and_resets_after_recovery(tmp_path):
         "sensor",
         expected_interval=timedelta(seconds=30),
         critical=True,
-        seen_at=NOW - timedelta(seconds=61),
+        seen_at=NOW + timedelta(seconds=1),
     )
-    reopened = operations.snapshot(now=NOW).alerts[0]
+    reopened = operations.snapshot(now=NOW + timedelta(seconds=62)).alerts[0]
     assert reopened.state is AlertState.OPEN
     assert reopened.severity is AlertSeverity.CRITICAL
 

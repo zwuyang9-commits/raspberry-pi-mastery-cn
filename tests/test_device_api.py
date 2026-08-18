@@ -4,7 +4,6 @@ from fastapi.testclient import TestClient
 
 from rpi_mastery.hardware import SimulatedDigitalOutput
 
-
 device_api = importlib.import_module("projects.03_local_device_api.main")
 
 

@@ -71,7 +71,7 @@ class FlexibleLoad:
         _require_number(self.power_kw, "负载功率")
         _require_number(self.duration_hours, "运行时长")
         if not isinstance(self.priority, int) or isinstance(self.priority, bool):
-            raise ValueError("优先级必须是正整数")
+            raise TypeError("优先级必须是正整数")
         if self.priority <= 0:
             raise ValueError("优先级必须是正整数")
 
@@ -190,6 +190,6 @@ class EnergyScheduler:
 
     @staticmethod
     def _require_unique_names(items: list[object], kind: str) -> None:
-        names = [getattr(item, "name").strip() for item in items]
+        names = [item.name.strip() for item in items]
         if len(names) != len(set(names)):
             raise ValueError(f"{kind}名称必须唯一")
