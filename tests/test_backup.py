@@ -70,3 +70,37 @@ def test_create_rejects_path_outside_source_root(tmp_path):
 
     with pytest.raises(BackupError, match="outside source root"):
         LocalBackupManager(source).create(tmp_path / "backup.zip", [outside])
+
+
+def test_rotation_previews_then_removes_only_verified_old_backups(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    state = source / "state.txt"
+    state.write_text("state", encoding="utf-8")
+    backups = tmp_path / "backups"
+    manager = LocalBackupManager(source)
+    for day in range(1, 4):
+        manager.create(
+            backups / f"state-{day}.zip",
+            ["state.txt"],
+            created_at=datetime(2026, 8, day, tzinfo=timezone.utc),
+        )
+    invalid = backups / "unrelated.zip"
+    invalid.write_bytes(b"not a zip")
+
+    preview = manager.rotate(backups, keep=2)
+
+    assert [path.name for path in preview.keep] == ["state-3.zip", "state-2.zip"]
+    assert [path.name for path in preview.remove] == ["state-1.zip"]
+    assert preview.invalid == (invalid,)
+    assert all(path.exists() for path in preview.remove)
+
+    applied = manager.rotate(backups, keep=2, apply=True)
+    assert applied.applied is True
+    assert not (backups / "state-1.zip").exists()
+    assert invalid.exists()
+
+
+def test_rotation_rejects_zero_retention(tmp_path):
+    with pytest.raises(ValueError, match="positive"):
+        LocalBackupManager(tmp_path).rotate(tmp_path, keep=0)

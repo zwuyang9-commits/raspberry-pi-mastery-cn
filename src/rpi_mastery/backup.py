@@ -40,6 +40,16 @@ class BackupReport:
         return sum(item.size for item in self.files)
 
 
+@dataclass(frozen=True)
+class BackupRotationPlan:
+    """A reviewable retention plan; invalid archives are never removal candidates."""
+
+    keep: tuple[Path, ...]
+    remove: tuple[Path, ...]
+    invalid: tuple[Path, ...]
+    applied: bool
+
+
 def _sha256(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -161,6 +171,38 @@ class LocalBackupManager:
         finally:
             shutil.rmtree(stage, ignore_errors=True)
         return tuple(restored)
+
+    def rotate(
+        self,
+        directory: str | Path,
+        *,
+        keep: int,
+        apply: bool = False,
+    ) -> BackupRotationPlan:
+        """Keep the newest verified archives and optionally remove older ones."""
+
+        if keep < 1:
+            raise ValueError("keep must be positive")
+        backup_directory = Path(directory).resolve()
+        if not backup_directory.exists():
+            return BackupRotationPlan((), (), (), apply)
+        if not backup_directory.is_dir():
+            raise BackupError(f"backup directory is not a directory: {backup_directory}")
+
+        verified: list[BackupReport] = []
+        invalid: list[Path] = []
+        for archive in sorted(backup_directory.glob("*.zip")):
+            try:
+                verified.append(self.verify(archive))
+            except BackupError:
+                invalid.append(archive)
+        verified.sort(key=lambda report: (report.created_at, report.archive.name), reverse=True)
+        retained = tuple(report.archive for report in verified[:keep])
+        removal = tuple(report.archive for report in verified[keep:])
+        if apply:
+            for archive in removal:
+                archive.unlink()
+        return BackupRotationPlan(retained, removal, tuple(invalid), apply)
 
     def _collect(self, paths: Iterable[str | Path]) -> list[Path]:
         collected: set[Path] = set()

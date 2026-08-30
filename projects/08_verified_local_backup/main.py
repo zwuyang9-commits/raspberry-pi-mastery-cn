@@ -24,6 +24,11 @@ def build_parser() -> argparse.ArgumentParser:
     restore.add_argument("archive", type=Path)
     restore.add_argument("destination", type=Path)
     restore.add_argument("--overwrite", action="store_true", help="允许覆盖同名文件")
+
+    rotate = subparsers.add_parser("rotate", help="预览或执行备份轮换")
+    rotate.add_argument("directory", type=Path)
+    rotate.add_argument("--keep", type=int, required=True, help="保留最新的有效备份数量")
+    rotate.add_argument("--apply", action="store_true", help="实际删除预览中的旧备份")
     return parser
 
 
@@ -36,9 +41,17 @@ def main() -> None:
     elif args.command == "verify":
         report = manager.verify(args.archive)
         print(f"校验通过：{len(report.files)} 个文件，创建于 {report.created_at.isoformat()}")
-    else:
+    elif args.command == "restore":
         restored = manager.restore(args.archive, args.destination, overwrite=args.overwrite)
         print(f"已恢复 {len(restored)} 个文件到 {args.destination.resolve()}")
+    else:
+        plan = manager.rotate(args.directory, keep=args.keep, apply=args.apply)
+        mode = "已执行" if plan.applied else "仅预览"
+        print(f"{mode}：保留 {len(plan.keep)}，清理 {len(plan.remove)}，无效 {len(plan.invalid)}")
+        for archive in plan.remove:
+            print(f"- 清理：{archive}")
+        for archive in plan.invalid:
+            print(f"- 跳过无效文件：{archive}")
 
 
 if __name__ == "__main__":
