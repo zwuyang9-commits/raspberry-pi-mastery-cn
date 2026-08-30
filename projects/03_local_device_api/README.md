@@ -32,8 +32,14 @@ uvicorn projects.03_local_device_api.main:app --host 0.0.0.0 --port 8000
 curl -X PUT http://树莓派IP:8000/output \
   -H 'Content-Type: application/json' \
   -H "X-API-Token: $RPI_API_TOKEN" \
+  -H 'Idempotency-Key: phone-command-0001' \
   -d '{"value": 0.5}'
 ```
+
+建议每一个逻辑控制命令使用一个新的 `Idempotency-Key`（8–128 位字母、数字或 `._:-`）。网络
+超时后用同一个键和相同内容重试，服务不会再次操作输出，并返回 `Idempotency-Replayed: true`；
+同一个键配不同值会返回 409。设置 `RPI_API_AUDIT_LOG=data/device-api.jsonl` 后，幂等记录可在
+重启后恢复，每次首次写入和重放也会写入本地审计日志。
 
 应用退出时会自动关闭输出并回到 0。真正接继电器前，还需要根据负载增加硬件隔离、保险和手动
 急停；令牌也不要提交进仓库。
