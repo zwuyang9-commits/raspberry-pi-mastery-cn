@@ -215,6 +215,9 @@ class HubSnapshot:
                     "window": decision.window,
                     "estimated_cost": decision.estimated_cost,
                     "reason": decision.reason,
+                    "closest_window": decision.closest_window,
+                    "capacity_shortfall_kw": decision.capacity_shortfall_kw,
+                    "duration_shortfall_hours": decision.duration_shortfall_hours,
                 }
                 for decision in self.energy
             ],
@@ -315,6 +318,9 @@ class LocalOperations:
                     "window": decision.window,
                     "estimated_cost": decision.estimated_cost,
                     "reason": decision.reason,
+                    "closest_window": decision.closest_window,
+                    "capacity_shortfall_kw": decision.capacity_shortfall_kw,
+                    "duration_shortfall_hours": decision.duration_shortfall_hours,
                 },
             )
         return decisions

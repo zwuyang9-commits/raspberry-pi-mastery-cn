@@ -86,6 +86,9 @@ class ScheduleDecision:
     window: str
     estimated_cost: float
     reason: str
+    closest_window: str | None = None
+    capacity_shortfall_kw: float = 0.0
+    duration_shortfall_hours: float = 0.0
 
 
 class EnergyScheduler:
@@ -116,13 +119,30 @@ class EnergyScheduler:
                 and load.power_kw <= remaining_capacity[window.name]
             ]
             if not eligible:
+                closest = self._closest_window(load, windows, remaining_capacity)
+                if closest is None:
+                    reason = "没有可用时段，需要新增时段或人工处理"
+                    closest_name = None
+                    capacity_shortfall = 0.0
+                    duration_shortfall = 0.0
+                else:
+                    window, capacity_shortfall, duration_shortfall = closest
+                    gaps: list[str] = []
+                    if capacity_shortfall > 0:
+                        gaps.append(f"增加 {capacity_shortfall:.2f} kW 容量")
+                    if duration_shortfall > 0:
+                        gaps.append(f"延长 {duration_shortfall:.2f} 小时")
+                    closest_name = window.name
+                    reason = f"最接近的时段是 {window.name}，需要" + "并".join(gaps)
                 decisions.append(
                     ScheduleDecision(
                         load.name,
                         "未安排",
                         0.0,
-                        "没有时段能容纳完整运行时长，或剩余容量不足，"
-                        "需要人工处理",
+                        reason,
+                        closest_window=closest_name,
+                        capacity_shortfall_kw=round(capacity_shortfall, 4),
+                        duration_shortfall_hours=round(duration_shortfall, 4),
                     )
                 )
                 continue
@@ -162,6 +182,32 @@ class EnergyScheduler:
             )
 
         return decisions
+
+    @staticmethod
+    def _closest_window(
+        load: FlexibleLoad,
+        windows: list[EnergyWindow],
+        remaining_capacity: dict[str, float],
+    ) -> tuple[EnergyWindow, float, float] | None:
+        if not windows:
+            return None
+
+        def gaps(window: EnergyWindow) -> tuple[float, float]:
+            return (
+                max(0.0, load.power_kw - remaining_capacity[window.name]),
+                max(0.0, load.duration_hours - window.duration_hours),
+            )
+
+        closest = min(
+            windows,
+            key=lambda window: (
+                gaps(window)[0] / load.power_kw + gaps(window)[1] / load.duration_hours,
+                window.price_per_kwh,
+                window.name,
+            ),
+        )
+        capacity_shortfall, duration_shortfall = gaps(closest)
+        return closest, capacity_shortfall, duration_shortfall
 
     @staticmethod
     def _score(

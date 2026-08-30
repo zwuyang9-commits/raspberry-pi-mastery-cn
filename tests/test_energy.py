@@ -23,7 +23,10 @@ def test_scheduler_reports_capacity_shortage():
     decision = EnergyScheduler().schedule([load], windows)[0]
 
     assert decision.window == "未安排"
-    assert "容量不足" in decision.reason
+    assert "增加 1.50 kW 容量" in decision.reason
+    assert decision.closest_window == "small"
+    assert decision.capacity_shortfall_kw == 1.5
+    assert decision.duration_shortfall_hours == 0.0
 
 
 def test_scheduler_does_not_reuse_one_window_solar_budget():
@@ -62,7 +65,9 @@ def test_scheduler_rejects_load_longer_than_window():
     decision = EnergyScheduler().schedule([load], windows)[0]
 
     assert decision.window == "未安排"
-    assert "运行时长" in decision.reason
+    assert "延长 0.50 小时" in decision.reason
+    assert decision.closest_window == "short"
+    assert decision.duration_shortfall_hours == 0.5
 
 
 def test_scheduler_tracks_shared_window_power_capacity():
@@ -144,3 +149,27 @@ def test_scheduler_requires_unique_window_and_load_names():
         EnergyScheduler().schedule([], duplicate_windows)
     with pytest.raises(ValueError, match="负载名称必须唯一"):
         EnergyScheduler().schedule(duplicate_loads, [])
+
+
+def test_scheduler_explains_when_no_windows_exist():
+    decision = EnergyScheduler().schedule(
+        [FlexibleLoad("heater", power_kw=2.0, duration_hours=1.0)],
+        [],
+    )[0]
+
+    assert decision.window == "未安排"
+    assert decision.closest_window is None
+    assert "新增时段" in decision.reason
+
+
+def test_scheduler_chooses_closest_window_by_relative_shortfall():
+    load = FlexibleLoad("heater", power_kw=2.0, duration_hours=2.0)
+    windows = [
+        EnergyWindow("power-short", 0.3, 0.0, capacity_kw=1.5, duration_hours=2.0),
+        EnergyWindow("time-short", 0.2, 0.0, capacity_kw=2.0, duration_hours=1.0),
+    ]
+
+    decision = EnergyScheduler().schedule([load], windows)[0]
+
+    assert decision.closest_window == "power-short"
+    assert decision.capacity_shortfall_kw == 0.5
