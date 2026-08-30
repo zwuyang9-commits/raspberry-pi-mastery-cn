@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "name": "high-temperature",
+      "event_kind": "temperature_c",
+      "operator": "gte",
+      "value": 30,
+      "action": {
+        "target": "fan",
+        "command": "set",
+        "value": 1,
+        "reason": "温度 {value}°C 达到阈值"
+      }
+    },
+    {
+      "name": "water-leak",
+      "event_kind": "water_leak",
+      "operator": "is_true",
+      "value": true,
+      "action": {
+        "target": "water_valve",
+        "command": "close",
+        "value": true,
+        "reason": "检测到漏水，进入安全状态"
+      }
+    }
+  ]
+}

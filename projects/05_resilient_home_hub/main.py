@@ -8,6 +8,7 @@ from pathlib import Path
 from rpi_mastery.audit import AuditLog
 from rpi_mastery.automation import Action, Event, Rule, RuleEngine
 from rpi_mastery.health import DeviceHealthMonitor
+from rpi_mastery.rule_config import load_rule_engine
 
 
 def is_active_leak(event: Event) -> bool:
@@ -41,8 +42,8 @@ def build_engine() -> RuleEngine:
     )
 
 
-def run_demo(audit_path: Path | None = None) -> None:
-    engine = build_engine()
+def run_demo(audit_path: Path | None = None, rules_path: Path | None = None) -> None:
+    engine = load_rule_engine(rules_path) if rules_path is not None else build_engine()
     audit = AuditLog(audit_path) if audit_path is not None else None
     events = [
         Event.now("temperature_c", 31.2, "living-room"),
@@ -93,7 +94,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="离线优先的韧性家庭智能中枢")
     parser.add_argument("--simulate", action="store_true")
     parser.add_argument("--audit-log", type=Path)
+    parser.add_argument("--rules", type=Path, help="经过校验的 JSON 规则配置")
     args = parser.parse_args()
     if not args.simulate:
         raise SystemExit("当前版本请使用 --simulate；真实设备适配见 README")
-    run_demo(args.audit_log)
+    run_demo(args.audit_log, args.rules)

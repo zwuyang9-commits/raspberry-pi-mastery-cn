@@ -13,8 +13,13 @@
 ```bash
 python main.py --simulate
 python main.py --simulate --audit-log data/home-hub.jsonl
+python main.py --simulate --rules rules.example.json
 ```
 
 指定 `--audit-log` 后，传感器事件、规则动作和设备状态会追加到本地 JSONL 文件。这里仍是模拟
 演示，不会直接驱动真实阀门；接设备前还要补持久化队列、看门狗、MQTT 身份验证、独立告警通道
 和手动急停。
+
+`--rules` 可以加载声明式 JSON 规则。配置会整份校验，支持 `gt`、`gte`、`lt`、`lte`、`eq`、
+`is_true` 和 `is_false` 运算符；字段错误、重复名称或类型不符时拒绝启用。长期运行的程序可使用
+`ReloadableRuleEngine`，重新加载失败时会继续使用上一次验证通过的规则。
