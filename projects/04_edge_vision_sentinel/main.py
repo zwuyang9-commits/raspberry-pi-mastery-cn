@@ -1,31 +1,45 @@
 from __future__ import annotations
 
+import argparse
+import json
 import random
 import time
-from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+
+from rpi_mastery.vision import Detection, PrivacyFirstSentinel
 
 
-@dataclass(frozen=True)
-class Detection:
-    label: str
-    confidence: float
+def main() -> None:
+    parser = argparse.ArgumentParser(description="隐私优先的边缘视觉事件过滤器")
+    parser.add_argument("--frames", type=int, default=10)
+    parser.add_argument("--threshold", type=float, default=0.8)
+    parser.add_argument("--confirm-frames", type=int, default=2)
+    parser.add_argument("--cooldown", type=float, default=30.0)
+    parser.add_argument("--interval", type=float, default=0.5)
+    parser.add_argument("--seed", type=int, default=42)
+    args = parser.parse_args()
+    if args.frames < 1 or args.interval < 0:
+        parser.error("frames 必须为正整数且 interval 不能为负数")
 
-
-class PrivacyFirstSentinel:
-    def __init__(self, threshold: float = 0.8) -> None:
-        self.threshold = threshold
-
-    def process(self, detections: list[Detection]) -> list[dict]:
-        return [
-            {"event": "presence", "label": item.label, "confidence": item.confidence}
-            for item in detections
-            if item.confidence >= self.threshold
-        ]
+    sentinel = PrivacyFirstSentinel(
+        threshold=args.threshold,
+        required_consecutive=args.confirm_frames,
+        cooldown=timedelta(seconds=args.cooldown),
+    )
+    generator = random.Random(args.seed)
+    started_at = datetime.now(timezone.utc)
+    for index in range(args.frames):
+        simulated = [Detection("person", generator.random())]
+        events = sentinel.process(
+            simulated,
+            observed_at=started_at + timedelta(seconds=index * args.interval),
+        )
+        for event in events:
+            print(json.dumps(event.as_dict(), ensure_ascii=False))
+        if index + 1 < args.frames:
+            time.sleep(args.interval)
+    print(json.dumps(sentinel.stats.__dict__, ensure_ascii=False))
 
 
 if __name__ == "__main__":
-    sentinel = PrivacyFirstSentinel()
-    for _ in range(5):
-        simulated = [Detection("person", random.random())]
-        print(sentinel.process(simulated))
-        time.sleep(0.5)
+    main()
