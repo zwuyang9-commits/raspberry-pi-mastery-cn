@@ -28,6 +28,15 @@ class AuditEntry:
     payload: dict[str, Any]
 
 
+@dataclass(frozen=True)
+class AuditSummary:
+    entries: int
+    first_timestamp: datetime | None
+    last_timestamp: datetime | None
+    kinds: dict[str, int]
+    sources: dict[str, int]
+
+
 class AuditLogCorrupted(ValueError):
     """Raised when a JSONL record cannot be decoded safely."""
 
@@ -83,12 +92,17 @@ class AuditLog:
         self,
         *,
         kind: str | None = None,
+        source: str | None = None,
         since: datetime | None = None,
+        until: datetime | None = None,
         limit: int | None = None,
     ) -> list[AuditEntry]:
         if limit is not None and limit < 1:
             raise ValueError("limit must be positive")
         since_utc = _as_utc(since) if since is not None else None
+        until_utc = _as_utc(until) if until is not None else None
+        if since_utc is not None and until_utc is not None and since_utc > until_utc:
+            raise ValueError("since cannot be later than until")
         if not self.path.exists():
             return []
 
@@ -126,8 +140,34 @@ class AuditLog:
 
                 if kind is not None and entry.kind != kind:
                     continue
+                if source is not None and entry.source != source:
+                    continue
                 if since_utc is not None and entry.timestamp < since_utc:
+                    continue
+                if until_utc is not None and entry.timestamp > until_utc:
                     continue
                 entries.append(entry)
 
         return entries[-limit:] if limit is not None else entries
+
+    def summarize(
+        self,
+        *,
+        kind: str | None = None,
+        source: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+    ) -> AuditSummary:
+        entries = self.read(kind=kind, source=source, since=since, until=until)
+        kinds: dict[str, int] = {}
+        sources: dict[str, int] = {}
+        for entry in entries:
+            kinds[entry.kind] = kinds.get(entry.kind, 0) + 1
+            sources[entry.source] = sources.get(entry.source, 0) + 1
+        return AuditSummary(
+            entries=len(entries),
+            first_timestamp=entries[0].timestamp if entries else None,
+            last_timestamp=entries[-1].timestamp if entries else None,
+            kinds=dict(sorted(kinds.items())),
+            sources=dict(sorted(sources.items())),
+        )

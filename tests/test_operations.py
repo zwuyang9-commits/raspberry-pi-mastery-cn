@@ -165,3 +165,17 @@ def test_snapshot_rejects_invalid_health_history_window(tmp_path):
 
     with pytest.raises(ValueError, match="health_history_window"):
         operations.snapshot(now=NOW, health_history_window=timedelta(0))
+
+
+def test_repeated_snapshot_at_same_time_does_not_duplicate_health_sample(tmp_path):
+    operations = build_operations(tmp_path)
+    operations.record_heartbeat(
+        "sensor",
+        expected_interval=timedelta(seconds=30),
+        seen_at=NOW,
+    )
+
+    operations.snapshot(now=NOW)
+    snapshot = operations.snapshot(now=NOW)
+
+    assert snapshot.health_trends[0].samples == 1

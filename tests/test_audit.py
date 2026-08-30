@@ -108,3 +108,41 @@ def test_audit_log_rejects_non_dictionary_payloads_on_append(tmp_path):
 
     with pytest.raises(TypeError, match="payload must be a dictionary"):
         log.append("event", "sensor", [("online", True)])  # type: ignore[arg-type]
+
+
+def test_read_filters_by_source_and_closed_time_range(tmp_path):
+    log = AuditLog(tmp_path / "audit.jsonl")
+    log.append("event", "sensor-a", {"value": 1}, timestamp=NOW)
+    log.append("event", "sensor-b", {"value": 2}, timestamp=NOW + timedelta(minutes=1))
+    log.append("action", "sensor-a", {"value": 3}, timestamp=NOW + timedelta(minutes=2))
+
+    entries = log.read(
+        source="sensor-a",
+        since=NOW,
+        until=NOW + timedelta(minutes=1),
+    )
+
+    assert [entry.payload["value"] for entry in entries] == [1]
+
+
+def test_summary_counts_filtered_kinds_and_sources(tmp_path):
+    log = AuditLog(tmp_path / "audit.jsonl")
+    log.append("event", "sensor-a", {}, timestamp=NOW)
+    log.append("event", "sensor-b", {}, timestamp=NOW + timedelta(minutes=1))
+    log.append("action", "fan", {}, timestamp=NOW + timedelta(minutes=2))
+
+    summary = log.summarize(since=NOW + timedelta(seconds=30))
+
+    assert summary.entries == 2
+    assert summary.kinds == {"action": 1, "event": 1}
+    assert summary.sources == {"fan": 1, "sensor-b": 1}
+    assert summary.first_timestamp == NOW + timedelta(minutes=1)
+    assert summary.last_timestamp == NOW + timedelta(minutes=2)
+
+
+def test_read_rejects_reversed_time_range(tmp_path):
+    with pytest.raises(ValueError, match="since cannot"):
+        AuditLog(tmp_path / "audit.jsonl").read(
+            since=NOW + timedelta(seconds=1),
+            until=NOW,
+        )

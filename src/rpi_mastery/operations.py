@@ -333,12 +333,23 @@ class LocalOperations:
         generated_at = now or datetime.now(timezone.utc)
         health = tuple(self.monitor.inspect_all(now=generated_at))
         for report in health:
-            self.audit.append(
-                "health_sample",
-                report.device_id,
-                {"status": report.status.value},
-                timestamp=generated_at,
+            previous = self.audit.read(
+                kind="health_sample",
+                source=report.device_id,
+                limit=1,
             )
+            duplicate = (
+                previous
+                and previous[0].timestamp == generated_at
+                and previous[0].payload.get("status") == report.status.value
+            )
+            if not duplicate:
+                self.audit.append(
+                    "health_sample",
+                    report.device_id,
+                    {"status": report.status.value},
+                    timestamp=generated_at,
+                )
         health_trends = self._health_trends(
             since=generated_at - health_history_window,
         )
