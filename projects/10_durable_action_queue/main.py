@@ -24,9 +24,14 @@ def build_parser() -> argparse.ArgumentParser:
     enqueue.add_argument("--id", dest="action_id")
 
     commands.add_parser("list", help="列出待执行动作")
+    commands.add_parser("list-dead", help="列出达到重试上限的死信动作")
     run = commands.add_parser("run-demo", help="用模拟处理器执行待处理动作")
     run.add_argument("--fail-target", help="模拟指定目标执行失败")
     run.add_argument("--max-items", type=int)
+    run.add_argument("--max-attempts", type=int, default=3)
+    requeue = commands.add_parser("requeue", help="用新 ID 重新加入死信动作")
+    requeue.add_argument("action_id")
+    requeue.add_argument("--new-id")
     return parser
 
 
@@ -45,8 +50,9 @@ def main() -> None:
         print(json.dumps({"action_id": queued.action_id, "status": "pending"}, ensure_ascii=False))
         return
 
-    if args.command == "list":
-        for item in queue.pending():
+    if args.command in {"list", "list-dead"}:
+        items = queue.pending() if args.command == "list" else queue.dead_letters()
+        for item in items:
             print(
                 json.dumps(
                     {
@@ -62,12 +68,21 @@ def main() -> None:
             )
         return
 
+    if args.command == "requeue":
+        item = queue.requeue_dead_letter(args.action_id, new_action_id=args.new_id)
+        print(json.dumps({"action_id": item.action_id, "status": "pending"}, ensure_ascii=False))
+        return
+
     def simulate(item: QueuedAction) -> None:
         if item.action.target == args.fail_target:
             raise RuntimeError("模拟设备离线")
         print(f"执行 {item.action_id}: {item.action.target} {item.action.command}")
 
-    report = queue.dispatch(simulate, max_items=args.max_items)
+    report = queue.dispatch(
+        simulate,
+        max_items=args.max_items,
+        max_attempts=args.max_attempts,
+    )
     print(json.dumps(report.__dict__, ensure_ascii=False))
 
 

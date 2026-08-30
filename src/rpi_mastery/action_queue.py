@@ -32,6 +32,7 @@ class DispatchReport:
     processed: int
     completed: tuple[str, ...]
     failed: tuple[str, ...]
+    dead_lettered: tuple[str, ...] = ()
 
 
 class DurableActionQueue:
@@ -115,22 +116,87 @@ class DurableActionQueue:
                         attempts=item.attempts,
                         last_error=str(entry.payload.get("error", "unknown error")),
                     )
-                elif entry.kind == "queued_action_completed":
+                elif entry.kind in {"queued_action_completed", "queued_action_dead_lettered"}:
                     active.pop(identifier, None)
             return tuple(active[identifier] for identifier in order if identifier in active)
+
+    def dead_letters(self) -> tuple[QueuedAction, ...]:
+        """Return actions removed after exhausting their retry allowance."""
+
+        with self._lock:
+            known: dict[str, QueuedAction] = {}
+            dead: dict[str, QueuedAction] = {}
+            order: list[str] = []
+            for entry in self.audit.read():
+                identifier = entry.payload.get("action_id")
+                if not isinstance(identifier, str):
+                    continue
+                if entry.kind == "queued_action_created":
+                    try:
+                        action = Action(
+                            entry.source,
+                            str(entry.payload["command"]),
+                            entry.payload["value"],
+                            str(entry.payload["reason"]),
+                        )
+                    except KeyError as error:
+                        raise ActionQueueError(f"invalid queued action: {identifier}") from error
+                    known[identifier] = QueuedAction(identifier, action, entry.timestamp)
+                elif entry.kind == "queued_action_attempted" and identifier in known:
+                    item = known[identifier]
+                    known[identifier] = QueuedAction(
+                        item.action_id,
+                        item.action,
+                        item.enqueued_at,
+                        attempts=item.attempts + 1,
+                        last_error=item.last_error,
+                    )
+                elif entry.kind == "queued_action_failed" and identifier in known:
+                    item = known[identifier]
+                    known[identifier] = QueuedAction(
+                        item.action_id,
+                        item.action,
+                        item.enqueued_at,
+                        attempts=item.attempts,
+                        last_error=str(entry.payload.get("error", "unknown error")),
+                    )
+                elif entry.kind == "queued_action_dead_lettered" and identifier in known:
+                    dead[identifier] = known[identifier]
+                    order.append(identifier)
+            return tuple(dead[identifier] for identifier in order)
+
+    def requeue_dead_letter(
+        self,
+        action_id: str,
+        *,
+        new_action_id: str | None = None,
+        now: datetime | None = None,
+    ) -> QueuedAction:
+        with self._lock:
+            item = next(
+                (candidate for candidate in self.dead_letters() if candidate.action_id == action_id),
+                None,
+            )
+            if item is None:
+                raise ActionQueueError(f"dead letter not found: {action_id}")
+            return self.enqueue(item.action, action_id=new_action_id, now=now)
 
     def dispatch(
         self,
         handler: Callable[[QueuedAction], None],
         *,
         max_items: int | None = None,
+        max_attempts: int = 3,
         now: datetime | None = None,
     ) -> DispatchReport:
         if max_items is not None and max_items < 1:
             raise ValueError("max_items must be positive")
+        if max_attempts < 1:
+            raise ValueError("max_attempts must be positive")
         timestamp = now or datetime.now(timezone.utc)
         completed: list[str] = []
         failed: list[str] = []
+        dead_lettered: list[str] = []
         with self._lock:
             items = self.pending()
             if max_items is not None:
@@ -154,6 +220,14 @@ class DurableActionQueue:
                         timestamp=timestamp,
                     )
                     failed.append(item.action_id)
+                    if item.attempts + 1 >= max_attempts:
+                        self.audit.append(
+                            "queued_action_dead_lettered",
+                            item.action.target,
+                            {**payload, "attempts": item.attempts + 1},
+                            timestamp=timestamp,
+                        )
+                        dead_lettered.append(item.action_id)
                     continue
                 self.audit.append(
                     "queued_action_completed",
@@ -162,7 +236,12 @@ class DurableActionQueue:
                     timestamp=timestamp,
                 )
                 completed.append(item.action_id)
-        return DispatchReport(len(completed) + len(failed), tuple(completed), tuple(failed))
+        return DispatchReport(
+            len(completed) + len(failed),
+            tuple(completed),
+            tuple(failed),
+            tuple(dead_lettered),
+        )
 
     def _known_ids(self) -> set[str]:
         identifiers: set[str] = set()
