@@ -57,6 +57,7 @@ python projects/02_environment_station/main.py --sensor simulated --samples 10
 # 查看本地中枢状态；加 --json 可交给其他脚本读取
 python projects/07_local_operations_console/main.py
 python projects/07_local_operations_console/main.py --json
+python projects/07_local_operations_console/main.py --prometheus
 
 # 备份并校验本地状态文件
 python projects/08_verified_local_backup/main.py --root . create backups/state.zip data

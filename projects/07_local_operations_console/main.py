@@ -9,7 +9,7 @@ from rpi_mastery.audit import AuditLog
 from rpi_mastery.automation import Action, Event, Rule, RuleEngine
 from rpi_mastery.energy import EnergyWindow, FlexibleLoad
 from rpi_mastery.health import DeviceHealthMonitor
-from rpi_mastery.operations import LocalOperations, render_snapshot
+from rpi_mastery.operations import LocalOperations, render_prometheus, render_snapshot
 
 
 def is_active_leak(event: Event) -> bool:
@@ -93,7 +93,13 @@ def main() -> None:
         default=Path("data/operations.jsonl"),
         help="本地审计日志路径",
     )
-    parser.add_argument("--json", action="store_true", help="输出机器可读的 JSON")
+    output = parser.add_mutually_exclusive_group()
+    output.add_argument("--json", action="store_true", help="输出机器可读的 JSON")
+    output.add_argument(
+        "--prometheus",
+        action="store_true",
+        help="输出 Prometheus 文本指标",
+    )
     parser.add_argument("--ack", metavar="CODE", help="确认一个活动告警")
     args = parser.parse_args()
 
@@ -110,6 +116,8 @@ def main() -> None:
     snapshot = console.snapshot(now=now)
     if args.json:
         print(json.dumps(snapshot.as_dict(), ensure_ascii=False, indent=2))
+    elif args.prometheus:
+        print(render_prometheus(snapshot), end="")
     else:
         print(render_snapshot(snapshot))
 

@@ -401,3 +401,69 @@ def render_snapshot(snapshot: HubSnapshot) -> str:
     else:
         lines.append("- 无")
     return "\n".join(lines)
+
+
+def _prometheus_label(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("\n", "\\n").replace('"', '\\"')
+
+
+def render_prometheus(snapshot: HubSnapshot) -> str:
+    """Render a deterministic Prometheus text exposition without extra dependencies."""
+
+    lines = [
+        "# HELP rpi_hub_status Current overall hub status as a labelled gauge.",
+        "# TYPE rpi_hub_status gauge",
+        f'rpi_hub_status{{status="{snapshot.status}"}} 1',
+        "# HELP rpi_device_health Device health state as a labelled gauge.",
+        "# TYPE rpi_device_health gauge",
+        "# HELP rpi_device_heartbeat_age_seconds Seconds since the latest heartbeat.",
+        "# TYPE rpi_device_heartbeat_age_seconds gauge",
+    ]
+    for report in snapshot.health:
+        device_id = _prometheus_label(report.device_id)
+        status = _prometheus_label(report.status.value)
+        lines.append(f'rpi_device_health{{device_id="{device_id}",status="{status}"}} 1')
+        if report.age_seconds is not None:
+            lines.append(f'rpi_device_heartbeat_age_seconds{{device_id="{device_id}"}} {report.age_seconds}')
+
+    alert_counts = {
+        (severity, state): sum(
+            1
+            for alert in snapshot.alerts
+            if alert.severity is severity and alert.state is state
+        )
+        for severity in AlertSeverity
+        for state in AlertState
+    }
+    lines.extend(
+        [
+            "# HELP rpi_alerts Active local alerts by severity and state.",
+            "# TYPE rpi_alerts gauge",
+        ]
+    )
+    for (severity, state), count in alert_counts.items():
+        lines.append(
+            f'rpi_alerts{{severity="{severity.value}",state="{state.value}"}} {count}'
+        )
+
+    lines.extend(
+        [
+            "# HELP rpi_energy_estimated_cost Estimated scheduled cost in local currency.",
+            "# TYPE rpi_energy_estimated_cost gauge",
+        ]
+    )
+    for decision in snapshot.energy:
+        load = _prometheus_label(decision.load)
+        window = _prometheus_label(decision.window)
+        lines.append(
+            f'rpi_energy_estimated_cost{{load="{load}",window="{window}"}} '
+            f"{decision.estimated_cost}"
+        )
+    lines.extend(
+        [
+            "# HELP rpi_recent_actions Number of recent actions in this snapshot.",
+            "# TYPE rpi_recent_actions gauge",
+            f"rpi_recent_actions {len(snapshot.recent_actions)}",
+        ]
+    )
+    return "\n".join(lines) + "\n"

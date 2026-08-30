@@ -6,7 +6,11 @@
 ```bash
 python projects/07_local_operations_console/main.py
 python projects/07_local_operations_console/main.py --json
+python projects/07_local_operations_console/main.py --prometheus
 ```
+
+`--prometheus` 输出 Prometheus 文本格式，包括中枢状态、每台设备的心跳年龄、活动告警、能源
+计划费用和快照中的动作数量。可以让局域网采集脚本调用该命令并暴露结果，无需云端服务。
 
 告警会写进本地 JSONL 审计日志。确认告警不会让故障消失，但能让下一位查看的人知道它已经
 有人处理：
