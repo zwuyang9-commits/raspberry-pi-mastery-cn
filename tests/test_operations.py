@@ -2,6 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from rpi_mastery.action_queue import DurableActionQueue
 from rpi_mastery.audit import AuditLog
 from rpi_mastery.automation import Action, Event, Rule, RuleEngine
 from rpi_mastery.energy import EnergyWindow, FlexibleLoad
@@ -209,3 +210,30 @@ def test_process_audits_broken_rule_and_continues_with_healthy_rule(tmp_path):
     assert failure.source == "broken"
     assert failure.payload["phase"] == "predicate"
     assert failure.payload["event_source"] == "sensor"
+
+
+def test_process_persists_actions_when_durable_queue_is_configured(tmp_path):
+    audit = AuditLog(tmp_path / "hub.jsonl")
+    queue = DurableActionQueue(AuditLog(tmp_path / "actions.jsonl"))
+    operations = LocalOperations(
+        RuleEngine(
+            [
+                Rule(
+                    "hot",
+                    "temperature_c",
+                    lambda event: True,
+                    lambda event: Action("fan", "on", True, "temperature high"),
+                )
+            ]
+        ),
+        DeviceHealthMonitor(),
+        audit,
+        action_queue=queue,
+    )
+
+    operations.process(Event("temperature_c", 31, "sensor", NOW))
+
+    [pending] = queue.pending()
+    assert pending.action.target == "fan"
+    assert pending.action.command == "on"
+    assert pending.enqueued_at == NOW

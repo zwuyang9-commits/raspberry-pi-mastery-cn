@@ -1,5 +1,11 @@
 """Reusable building blocks for the Raspberry Pi mastery course."""
 
+from .action_queue import (
+    ActionQueueError,
+    DispatchReport,
+    DurableActionQueue,
+    QueuedAction,
+)
 from .audit import AuditEntry, AuditLog, AuditLogCorrupted, AuditSummary
 from .automation import (
     Action,
@@ -47,6 +53,7 @@ __version__ = "0.3.0"
 
 __all__ = [
     "Action",
+    "ActionQueueError",
     "Alert",
     "AlertManager",
     "AlertSeverity",
@@ -66,6 +73,8 @@ __all__ = [
     "DeviceHeartbeat",
     "DeviceStatus",
     "DigitalOutput",
+    "DispatchReport",
+    "DurableActionQueue",
     "EnergyScheduler",
     "EnergyWindow",
     "Event",
@@ -75,6 +84,7 @@ __all__ = [
     "LocalBackupManager",
     "LocalOperations",
     "PrivacyFirstSentinel",
+    "QueuedAction",
     "Reading",
     "ReloadableRuleEngine",
     "Rule",

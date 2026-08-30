@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any
 
+from .action_queue import DurableActionQueue
 from .audit import AuditEntry, AuditLog
 from .automation import Action, Event, RuleEngine
 from .energy import EnergyScheduler, EnergyWindow, FlexibleLoad, ScheduleDecision
@@ -258,11 +259,13 @@ class LocalOperations:
         audit: AuditLog,
         *,
         scheduler: EnergyScheduler | None = None,
+        action_queue: DurableActionQueue | None = None,
     ) -> None:
         self.engine = engine
         self.monitor = monitor
         self.audit = audit
         self.scheduler = scheduler or EnergyScheduler()
+        self.action_queue = action_queue
         self.alerts = AlertManager(audit)
         self._energy_decisions: tuple[ScheduleDecision, ...] = ()
 
@@ -315,6 +318,8 @@ class LocalOperations:
                     "event_source": event.source,
                 },
             )
+            if self.action_queue is not None:
+                self.action_queue.enqueue(action, now=event.timestamp)
         return actions
 
     def plan_energy(
