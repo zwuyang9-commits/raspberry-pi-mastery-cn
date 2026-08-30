@@ -18,6 +18,7 @@
 | 05 本地自动化中枢 | 规则判断、设备心跳和 JSONL 审计 | 目前是模拟事件演示 |
 | 06 能源调度器 | 按电价、光伏余量和优先级安排负载 | 只给出计划，不控制市电 |
 | 07 运行状态控制台 | 汇总状态、持久化告警、确认与恢复 | 使用模拟数据，可输出文本或 JSON |
+| 08 可校验本地备份 | 打包状态文件、SHA-256 校验、安全恢复 | 纯本地运行，不依赖云服务 |
 
 课程顺序和每一步的练习记在 [`docs/CURRICULUM.md`](docs/CURRICULUM.md)，接线前先看
 [`docs/SAFETY.md`](docs/SAFETY.md)。每个项目目录也有一份短说明。
@@ -56,6 +57,10 @@ python projects/02_environment_station/main.py --sensor simulated --samples 10
 # 查看本地中枢状态；加 --json 可交给其他脚本读取
 python projects/07_local_operations_console/main.py
 python projects/07_local_operations_console/main.py --json
+
+# 备份并校验本地状态文件
+python projects/08_verified_local_backup/main.py --root . create backups/state.zip data
+python projects/08_verified_local_backup/main.py verify backups/state.zip
 ```
 
 局域网 API 需要 `web` 依赖：
