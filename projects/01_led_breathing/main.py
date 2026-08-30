@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 import time
 
-from rpi_mastery.hardware import make_output
+from rpi_mastery.hardware import WatchdogOutput, make_output
 
 
 def breathe(output, cycles: int, delay: float = 0.02, steps: int = 50) -> None:
@@ -24,5 +24,13 @@ if __name__ == "__main__":
     parser.add_argument("--pin", type=int, default=18)
     parser.add_argument("--cycles", type=int, default=3)
     parser.add_argument("--simulate", action="store_true")
+    parser.add_argument(
+        "--watchdog-timeout",
+        type=float,
+        help="超过指定秒数没有输出命令时自动归零",
+    )
     args = parser.parse_args()
-    breathe(make_output(args.pin, args.simulate), args.cycles)
+    output = make_output(args.pin, args.simulate)
+    if args.watchdog_timeout is not None:
+        output = WatchdogOutput(output, timeout=args.watchdog_timeout)
+    breathe(output, args.cycles)
