@@ -37,6 +37,17 @@ class Alert:
 
 
 @dataclass(frozen=True)
+class HealthTrend:
+    """Availability summary reconstructed from periodic local health samples."""
+
+    device_id: str
+    samples: int
+    online_samples: int
+    availability_percent: float
+    offline_transitions: int
+
+
+@dataclass(frozen=True)
 class _AlertCandidate:
     code: str
     severity: AlertSeverity
@@ -163,6 +174,7 @@ class HubSnapshot:
     energy: tuple[ScheduleDecision, ...]
     recent_actions: tuple[AuditEntry, ...]
     alerts: tuple[Alert, ...]
+    health_trends: tuple[HealthTrend, ...]
 
     @property
     def status(self) -> str:
@@ -186,6 +198,16 @@ class HubSnapshot:
                     "requires_safe_state": report.requires_safe_state,
                 }
                 for report in self.health
+            ],
+            "health_trends": [
+                {
+                    "device_id": trend.device_id,
+                    "samples": trend.samples,
+                    "online_samples": trend.online_samples,
+                    "availability_percent": trend.availability_percent,
+                    "offline_transitions": trend.offline_transitions,
+                }
+                for trend in self.health_trends
             ],
             "energy": [
                 {
@@ -302,11 +324,24 @@ class LocalOperations:
         *,
         now: datetime | None = None,
         recent_action_limit: int = 5,
+        health_history_window: timedelta = timedelta(hours=24),
     ) -> HubSnapshot:
         if recent_action_limit < 1:
             raise ValueError("recent_action_limit must be positive")
+        if health_history_window <= timedelta(0):
+            raise ValueError("health_history_window must be positive")
         generated_at = now or datetime.now(timezone.utc)
         health = tuple(self.monitor.inspect_all(now=generated_at))
+        for report in health:
+            self.audit.append(
+                "health_sample",
+                report.device_id,
+                {"status": report.status.value},
+                timestamp=generated_at,
+            )
+        health_trends = self._health_trends(
+            since=generated_at - health_history_window,
+        )
         candidates = self._alert_candidates(health, self._energy_decisions)
         alerts = self.alerts.sync(candidates, now=generated_at)
         actions = tuple(self.audit.read(kind="action", limit=recent_action_limit))
@@ -316,10 +351,40 @@ class LocalOperations:
             energy=self._energy_decisions,
             recent_actions=actions,
             alerts=alerts,
+            health_trends=health_trends,
         )
 
     def acknowledge_alert(self, code: str, *, now: datetime | None = None) -> Alert:
         return self.alerts.acknowledge(code, now=now)
+
+    def _health_trends(self, *, since: datetime) -> tuple[HealthTrend, ...]:
+        samples: dict[str, list[DeviceStatus]] = {}
+        for entry in self.audit.read(kind="health_sample", since=since):
+            try:
+                status = DeviceStatus(entry.payload["status"])
+            except (KeyError, ValueError):
+                continue
+            samples.setdefault(entry.source, []).append(status)
+
+        trends: list[HealthTrend] = []
+        unavailable = {DeviceStatus.LATE, DeviceStatus.OFFLINE}
+        for device_id in sorted(samples):
+            statuses = samples[device_id]
+            online = sum(status is DeviceStatus.ONLINE for status in statuses)
+            transitions = sum(
+                status in unavailable and (index == 0 or statuses[index - 1] not in unavailable)
+                for index, status in enumerate(statuses)
+            )
+            trends.append(
+                HealthTrend(
+                    device_id=device_id,
+                    samples=len(statuses),
+                    online_samples=online,
+                    availability_percent=round(online / len(statuses) * 100, 2),
+                    offline_transitions=transitions,
+                )
+            )
+        return tuple(trends)
 
     @staticmethod
     def _alert_candidates(
@@ -382,6 +447,16 @@ def render_snapshot(snapshot: HubSnapshot) -> str:
     else:
         lines.append("- 尚未生成计划")
 
+    lines.extend(["", "24 小时健康趋势"])
+    if snapshot.health_trends:
+        for trend in snapshot.health_trends:
+            lines.append(
+                f"- {trend.device_id}: 在线率 {trend.availability_percent:.2f}%，"
+                f"{trend.samples} 个样本，掉线 {trend.offline_transitions} 次"
+            )
+    else:
+        lines.append("- 暂无样本")
+
     lines.extend(["", "最近自动化动作"])
     if snapshot.recent_actions:
         for entry in snapshot.recent_actions:
@@ -425,6 +500,25 @@ def render_prometheus(snapshot: HubSnapshot) -> str:
         lines.append(f'rpi_device_health{{device_id="{device_id}",status="{status}"}} 1')
         if report.age_seconds is not None:
             lines.append(f'rpi_device_heartbeat_age_seconds{{device_id="{device_id}"}} {report.age_seconds}')
+
+    lines.extend(
+        [
+            "# HELP rpi_device_availability_percent Sampled availability in the history window.",
+            "# TYPE rpi_device_availability_percent gauge",
+            "# HELP rpi_device_offline_transitions Observed offline transitions in the history window.",
+            "# TYPE rpi_device_offline_transitions gauge",
+        ]
+    )
+    for trend in snapshot.health_trends:
+        device_id = _prometheus_label(trend.device_id)
+        lines.append(
+            f'rpi_device_availability_percent{{device_id="{device_id}"}} '
+            f"{trend.availability_percent}"
+        )
+        lines.append(
+            f'rpi_device_offline_transitions{{device_id="{device_id}"}} '
+            f"{trend.offline_transitions}"
+        )
 
     alert_counts = {
         (severity, state): sum(

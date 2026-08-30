@@ -127,3 +127,41 @@ def test_prometheus_export_contains_health_alert_energy_and_actions(tmp_path):
     assert 'rpi_energy_estimated_cost{load="heater",window="night"} 0.4' in metrics
     assert "rpi_recent_actions 1" in metrics
     assert metrics.endswith("\n")
+
+
+def test_health_trends_persist_samples_and_count_offline_transitions(tmp_path):
+    operations = build_operations(tmp_path)
+    operations.record_heartbeat(
+        "sensor",
+        expected_interval=timedelta(seconds=30),
+        seen_at=NOW,
+    )
+    operations.snapshot(now=NOW)
+    operations.snapshot(now=NOW + timedelta(seconds=31))
+    operations.snapshot(now=NOW + timedelta(seconds=61))
+    operations.record_heartbeat(
+        "sensor",
+        expected_interval=timedelta(seconds=30),
+        seen_at=NOW + timedelta(seconds=62),
+    )
+
+    snapshot = operations.snapshot(now=NOW + timedelta(seconds=62))
+    trend = snapshot.health_trends[0]
+
+    assert trend.device_id == "sensor"
+    assert trend.samples == 4
+    assert trend.online_samples == 2
+    assert trend.availability_percent == 50.0
+    assert trend.offline_transitions == 1
+    assert snapshot.as_dict()["health_trends"][0]["samples"] == 4
+    assert "在线率 50.00%" in render_snapshot(snapshot)
+    assert 'rpi_device_availability_percent{device_id="sensor"} 50.0' in render_prometheus(
+        snapshot
+    )
+
+
+def test_snapshot_rejects_invalid_health_history_window(tmp_path):
+    operations = build_operations(tmp_path)
+
+    with pytest.raises(ValueError, match="health_history_window"):
+        operations.snapshot(now=NOW, health_history_window=timedelta(0))
