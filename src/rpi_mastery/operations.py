@@ -288,7 +288,21 @@ class LocalOperations:
             {"name": event.kind, "value": event.value},
             timestamp=event.timestamp,
         )
-        actions = self.engine.evaluate(event)
+        evaluation = self.engine.evaluate_safely(event)
+        actions = list(evaluation.actions)
+        for failure in evaluation.failures:
+            self.audit.append(
+                "rule_error",
+                failure.rule,
+                {
+                    "phase": failure.phase,
+                    "error_type": failure.error_type,
+                    "message": failure.message,
+                    "event_kind": event.kind,
+                    "event_source": event.source,
+                },
+                timestamp=event.timestamp,
+            )
         for action in actions:
             self.audit.append(
                 "action",

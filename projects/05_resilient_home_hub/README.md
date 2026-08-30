@@ -23,3 +23,6 @@ python main.py --simulate --rules rules.example.json
 `--rules` 可以加载声明式 JSON 规则。配置会整份校验，支持 `gt`、`gte`、`lt`、`lte`、`eq`、
 `is_true` 和 `is_false` 运算符；字段错误、重复名称或类型不符时拒绝启用。长期运行的程序可使用
 `ReloadableRuleEngine`，重新加载失败时会继续使用上一次验证通过的规则。
+
+中枢通过 `evaluate_safely` 隔离单条规则故障：判断条件或动作构建失败时写入 `rule_error` 审计，
+其他规则仍会继续运行。涉及关键安全设备时仍应配置独立硬件联锁，不能只依赖软件容错。

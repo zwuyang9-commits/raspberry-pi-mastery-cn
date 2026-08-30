@@ -179,3 +179,33 @@ def test_repeated_snapshot_at_same_time_does_not_duplicate_health_sample(tmp_pat
     snapshot = operations.snapshot(now=NOW)
 
     assert snapshot.health_trends[0].samples == 1
+
+
+def test_process_audits_broken_rule_and_continues_with_healthy_rule(tmp_path):
+    def fail(event):
+        raise ValueError("bad reading")
+
+    audit = AuditLog(tmp_path / "hub.jsonl")
+    operations = LocalOperations(
+        RuleEngine(
+            [
+                Rule("broken", "temperature_c", fail, lambda event: None),
+                Rule(
+                    "healthy",
+                    "temperature_c",
+                    lambda event: True,
+                    lambda event: Action("fan", "on", True, "backup rule"),
+                ),
+            ]
+        ),
+        DeviceHealthMonitor(),
+        audit,
+    )
+
+    actions = operations.process(Event("temperature_c", 31, "sensor", NOW))
+
+    assert actions == [Action("fan", "on", True, "backup rule")]
+    [failure] = audit.read(kind="rule_error")
+    assert failure.source == "broken"
+    assert failure.payload["phase"] == "predicate"
+    assert failure.payload["event_source"] == "sensor"
