@@ -118,7 +118,7 @@ def test_make_sensor_rejects_unknown_backend():
 def test_collect_appends_rows_without_repeating_header(tmp_path):
     output = tmp_path / "environment.csv"
 
-    station.collect(
+    summary = station.collect(
         SimulatedSensor(),
         samples=2,
         interval=0,
@@ -138,6 +138,8 @@ def test_collect_appends_rows_without_repeating_header(tmp_path):
     assert rows[0] == station.CSV_HEADER
     assert len(rows) == 4
     assert sum(row == station.CSV_HEADER for row in rows) == 1
+    assert summary.samples == 2
+    assert summary.temperature_min <= summary.temperature_average <= summary.temperature_max
 
 
 def test_collect_retries_transient_failures(tmp_path, capsys):
@@ -184,3 +186,45 @@ def test_collect_validates_before_creating_output(tmp_path):
         )
 
     assert not output.exists()
+
+
+def test_quality_limits_retry_spike_and_keep_only_accepted_readings(tmp_path):
+    class ScriptedSensor:
+        def __init__(self):
+            self.readings = iter(
+                [
+                    Reading(20.0, 50.0),
+                    Reading(40.0, 51.0),
+                    Reading(21.0, 51.0),
+                ]
+            )
+
+        def read(self):
+            return next(self.readings)
+
+        def close(self):
+            return None
+
+    sleeps = []
+    output = tmp_path / "environment.csv"
+    summary = station.collect(
+        ScriptedSensor(),
+        samples=2,
+        interval=0,
+        output=output,
+        retries=1,
+        retry_delay=0.25,
+        sleep=sleeps.append,
+        quality=station.QualityLimits(max_temperature_step=5.0),
+    )
+
+    assert sleeps == [0, 0.25]
+    assert summary.temperature_max == 21.0
+    with output.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert [row["temperature_c"] for row in rows] == ["20.00", "21.00"]
+
+
+def test_quality_limits_reject_reversed_range():
+    with pytest.raises(ValueError, match="ascending"):
+        station.QualityLimits(temperature_range=(30.0, 10.0))

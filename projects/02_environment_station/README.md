@@ -74,3 +74,19 @@ python projects/02_environment_station/main.py \
 
 CSV 固定使用 `timestamp_utc,temperature_c,humidity_pct` 三列。如果目标文件已有其他表头，
 程序会停止并保留原文件，避免把两种格式混在一起。
+
+## 数据质量限制
+
+可以按安装环境设置合理范围和相邻读数的最大变化。超出限制的读数不会写进 CSV，而是按现有
+重试策略重新读取；全部尝试失败后安全退出。采集完成时会显示温湿度的最小值、最大值和平均值。
+
+```bash
+python projects/02_environment_station/main.py \
+  --sensor bme280 \
+  --temperature-range -20 60 \
+  --humidity-range 5 100 \
+  --max-temperature-step 5 \
+  --max-humidity-step 15
+```
+
+变化限制从第二个有效读数开始计算。应根据采样间隔和真实环境设定，不要照搬示例数值。
