@@ -38,12 +38,38 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--until", type=parse_time, help="结束时间（含边界）")
     parser.add_argument("--limit", type=int, help="只显示最后 N 条匹配记录")
     parser.add_argument("--summary", action="store_true", help="输出统计摘要")
+    parser.add_argument("--archive-before", type=parse_time, help="预览归档该时间之前的记录")
+    parser.add_argument("--archive-output", type=Path, help="独立归档文件路径")
+    parser.add_argument("--apply", action="store_true", help="实际执行归档预览")
     return parser
 
 
 def main() -> None:
     args = build_parser().parse_args()
     audit = AuditLog(args.log)
+    if args.archive_before is not None:
+        if args.archive_output is None:
+            raise SystemExit("使用 --archive-before 时必须指定 --archive-output")
+        report = audit.archive_before(
+            args.archive_before,
+            args.archive_output,
+            apply=args.apply,
+        )
+        print(
+            json.dumps(
+                {
+                    "mode": "applied" if report.applied else "preview",
+                    "archived_entries": report.archived_entries,
+                    "retained_entries": report.retained_entries,
+                    "archive": str(report.archive),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return
+    if args.apply:
+        raise SystemExit("--apply 只能与 --archive-before 一起使用")
     filters = {
         "kind": args.kind,
         "source": args.source,

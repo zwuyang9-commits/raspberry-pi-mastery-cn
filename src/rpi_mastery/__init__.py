@@ -6,7 +6,7 @@ from .action_queue import (
     DurableActionQueue,
     QueuedAction,
 )
-from .audit import AuditEntry, AuditLog, AuditLogCorrupted, AuditSummary
+from .audit import AuditArchiveReport, AuditEntry, AuditLog, AuditLogCorrupted, AuditSummary
 from .automation import (
     Action,
     Event,
@@ -58,6 +58,7 @@ __all__ = [
     "AlertManager",
     "AlertSeverity",
     "AlertState",
+    "AuditArchiveReport",
     "AuditEntry",
     "AuditLog",
     "AuditLogCorrupted",

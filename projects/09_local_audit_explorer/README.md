@@ -12,3 +12,16 @@ python projects/09_local_audit_explorer/main.py data/operations.jsonl --since 20
 
 默认逐行输出 JSON，适合继续交给其他命令处理；`--summary` 输出匹配记录的起止时间、总数、
 事件类型计数和来源计数。工具只读取日志，不会修改或标记记录。
+
+## 安全归档
+
+先停止正在写这个日志的服务，再预览截止时间之前的记录数量：
+
+```bash
+python projects/09_local_audit_explorer/main.py data/operations.jsonl \
+  --archive-before 2026-08-01T00:00:00+08:00 \
+  --archive-output archives/operations-2026-07.jsonl
+```
+
+确认数量后增加 `--apply`。工具会先验证全部源记录，完整写好独立归档和保留记录临时文件，再
+替换源日志；已有归档文件不会被覆盖。归档期间不要同时启动写入服务。

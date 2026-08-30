@@ -37,6 +37,15 @@ class AuditSummary:
     sources: dict[str, int]
 
 
+@dataclass(frozen=True)
+class AuditArchiveReport:
+    source: Path
+    archive: Path
+    archived_entries: int
+    retained_entries: int
+    applied: bool
+
+
 class AuditLogCorrupted(ValueError):
     """Raised when a JSONL record cannot be decoded safely."""
 
@@ -171,3 +180,61 @@ class AuditLog:
             kinds=dict(sorted(kinds.items())),
             sources=dict(sorted(sources.items())),
         )
+
+    def archive_before(
+        self,
+        cutoff: datetime,
+        archive: str | Path,
+        *,
+        apply: bool = False,
+    ) -> AuditArchiveReport:
+        """Preview or atomically archive records older than a UTC-normalized cutoff."""
+
+        cutoff_utc = _as_utc(cutoff)
+        archive_path = Path(archive).resolve()
+        source_path = self.path.resolve()
+        if archive_path == source_path:
+            raise ValueError("archive path must differ from source log")
+        entries = self.read()
+        archived = [entry for entry in entries if entry.timestamp < cutoff_utc]
+        retained = [entry for entry in entries if entry.timestamp >= cutoff_utc]
+        report = AuditArchiveReport(
+            source=source_path,
+            archive=archive_path,
+            archived_entries=len(archived),
+            retained_entries=len(retained),
+            applied=apply,
+        )
+        if not apply or not archived:
+            return report
+        if archive_path.exists():
+            raise FileExistsError(f"archive already exists: {archive_path}")
+
+        archive_path.parent.mkdir(parents=True, exist_ok=True)
+        source_path.parent.mkdir(parents=True, exist_ok=True)
+        archive_temporary = archive_path.with_name(f".{archive_path.name}.tmp")
+        source_temporary = source_path.with_name(f".{source_path.name}.retained.tmp")
+        try:
+            self._write_entries(archive_temporary, archived)
+            self._write_entries(source_temporary, retained)
+            os.replace(archive_temporary, archive_path)
+            os.replace(source_temporary, source_path)
+        finally:
+            archive_temporary.unlink(missing_ok=True)
+            source_temporary.unlink(missing_ok=True)
+        return report
+
+    @staticmethod
+    def _write_entries(path: Path, entries: list[AuditEntry]) -> None:
+        with path.open("x", encoding="utf-8") as handle:
+            for entry in entries:
+                encoded = {
+                    **asdict(entry),
+                    "timestamp": entry.timestamp.isoformat(),
+                }
+                handle.write(
+                    json.dumps(encoded, ensure_ascii=False, separators=(",", ":"))
+                )
+                handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())

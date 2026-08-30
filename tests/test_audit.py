@@ -146,3 +146,50 @@ def test_read_rejects_reversed_time_range(tmp_path):
             since=NOW + timedelta(seconds=1),
             until=NOW,
         )
+
+
+def test_archive_preview_does_not_modify_files(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    log = AuditLog(path)
+    log.append("event", "old", {}, timestamp=NOW)
+    log.append("event", "new", {}, timestamp=NOW + timedelta(days=1))
+    before = path.read_bytes()
+
+    report = log.archive_before(
+        NOW + timedelta(hours=1),
+        tmp_path / "archive.jsonl",
+    )
+
+    assert report.archived_entries == 1
+    assert report.retained_entries == 1
+    assert report.applied is False
+    assert path.read_bytes() == before
+    assert not report.archive.exists()
+
+
+def test_archive_apply_moves_old_records_and_preserves_cutoff_boundary(tmp_path):
+    path = tmp_path / "audit.jsonl"
+    archive = tmp_path / "archives" / "old.jsonl"
+    log = AuditLog(path)
+    log.append("event", "old", {}, timestamp=NOW)
+    log.append("event", "boundary", {}, timestamp=NOW + timedelta(hours=1))
+    log.append("event", "new", {}, timestamp=NOW + timedelta(hours=2))
+
+    report = log.archive_before(NOW + timedelta(hours=1), archive, apply=True)
+
+    assert report.applied is True
+    assert [entry.source for entry in AuditLog(archive).read()] == ["old"]
+    assert [entry.source for entry in log.read()] == ["boundary", "new"]
+
+
+def test_archive_refuses_to_overwrite_existing_file(tmp_path):
+    log = AuditLog(tmp_path / "audit.jsonl")
+    log.append("event", "old", {}, timestamp=NOW)
+    archive = tmp_path / "archive.jsonl"
+    archive.write_text("keep", encoding="utf-8")
+
+    with pytest.raises(FileExistsError, match="already exists"):
+        log.archive_before(NOW + timedelta(seconds=1), archive, apply=True)
+
+    assert [entry.source for entry in log.read()] == ["old"]
+    assert archive.read_text(encoding="utf-8") == "keep"
