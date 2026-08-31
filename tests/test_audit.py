@@ -144,6 +144,29 @@ def test_audit_log_treats_non_standard_json_number_as_corruption(tmp_path):
     assert error.value.line_number == 1
 
 
+@pytest.mark.parametrize(
+    "record",
+    [
+        (
+            '{"timestamp":"2026-07-30T08:00:00+00:00","kind":"event",'
+            '"kind":"action","source":"sensor","payload":{}}'
+        ),
+        (
+            '{"timestamp":"2026-07-30T08:00:00+00:00","kind":"event",'
+            '"source":"sensor","payload":{"value":1,"value":2}}'
+        ),
+    ],
+)
+def test_audit_log_treats_duplicate_json_keys_as_corruption(tmp_path, record):
+    path = tmp_path / "hub.jsonl"
+    path.write_text(record + "\n", encoding="utf-8")
+
+    with pytest.raises(AuditLogCorrupted) as error:
+        AuditLog(path).read()
+
+    assert error.value.line_number == 1
+
+
 def test_read_filters_by_source_and_closed_time_range(tmp_path):
     log = AuditLog(tmp_path / "audit.jsonl")
     log.append("event", "sensor-a", {"value": 1}, timestamp=NOW)

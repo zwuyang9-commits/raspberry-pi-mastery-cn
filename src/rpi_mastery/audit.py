@@ -54,6 +54,15 @@ def _reject_json_constant(value: str) -> Any:
     raise ValueError(f"non-standard JSON number: {value}")
 
 
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
 @dataclass(frozen=True)
 class AuditEntry:
     timestamp: datetime
@@ -168,7 +177,11 @@ class AuditLog:
                 if not line.strip():
                     continue
                 try:
-                    raw = json.loads(line, parse_constant=_reject_json_constant)
+                    raw = json.loads(
+                        line,
+                        parse_constant=_reject_json_constant,
+                        object_pairs_hook=_unique_json_object,
+                    )
                     if not isinstance(raw, dict):
                         raise TypeError("audit record must be a JSON object")
 
