@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
   workflow_dispatch:
 
@@ -44,13 +45,27 @@ jobs:
           python-version: "3.14"
           cache: pip
       - run: python -m pip install -e ".[dev]"
+      - run: python scripts/check_release.py
+      - name: Verify tag matches package version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: python scripts/check_release.py --tag "${GITHUB_REF_NAME}"
       - run: python -m build
       - run: python -m twine check dist/*
-      - run: python -m venv .package-test
-      - run: .package-test/bin/python -m pip install --no-deps dist/*.whl
-      - name: Verify installed metadata and public API
+      - run: python -m venv .wheel-test
+      - run: .wheel-test/bin/python -m pip install --no-deps dist/*.whl
+      - run: .wheel-test/bin/python -m pip check
+      - name: Verify wheel metadata and public API
         run: >-
-          .package-test/bin/python -c
+          .wheel-test/bin/python -c
+          "from importlib.metadata import version; import rpi_mastery;
+          assert version('rpi-mastery') == rpi_mastery.__version__;
+          assert rpi_mastery.QueueStatus.__name__ == 'QueueStatus'"
+      - run: python -m venv .sdist-test
+      - run: .sdist-test/bin/python -m pip install --no-deps dist/*.tar.gz
+      - run: .sdist-test/bin/python -m pip check
+      - name: Verify sdist metadata and public API
+        run: >-
+          .sdist-test/bin/python -c
           "from importlib.metadata import version; import rpi_mastery;
           assert version('rpi-mastery') == rpi_mastery.__version__;
           assert rpi_mastery.QueueStatus.__name__ == 'QueueStatus'"
