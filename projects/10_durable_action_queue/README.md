@@ -31,6 +31,7 @@ python projects/10_durable_action_queue/main.py cancel fan-command-001 --reason 
 
 调用 `dispatch` 时可传入 `retry_delay`。连续失败会按 1、2、4 倍延长等待时间；下次重试时间
 写入审计日志，因此程序重启后仍会遵守退避窗口，不会对离线设备进行紧密重试。
+传入的无时区执行时间按 UTC 处理，与持久化的退避和租约时间保持可比较。
 
 每次领取动作还会写入默认 30 秒的执行租约，可用 `--lease-seconds` 调整。工作进程意外退出后，
 其他进程会等待租约到期再恢复该动作，降低同一命令被立即并发执行的风险。

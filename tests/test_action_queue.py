@@ -171,6 +171,25 @@ def test_failed_action_waits_for_persisted_exponential_backoff(tmp_path):
     assert retried.completed == ("retry-later",)
 
 
+def test_dispatch_normalizes_naive_time_before_backoff_comparison(tmp_path):
+    audit = AuditLog(tmp_path / "queue.jsonl")
+    queue = DurableActionQueue(audit)
+    queue.enqueue(Action("fan", "set", 1, "test"), action_id="naive-time", now=NOW)
+    queue.dispatch(
+        lambda item: (_ for _ in ()).throw(RuntimeError("offline")),
+        retry_delay=timedelta(seconds=10),
+        now=NOW,
+    )
+
+    deferred = DurableActionQueue(audit).dispatch(
+        lambda item: pytest.fail("handler ran before backoff elapsed"),
+        now=(NOW + timedelta(seconds=9)).replace(tzinfo=None),
+    )
+
+    assert deferred.deferred == ("naive-time",)
+    assert audit.read(kind="queued_action_attempted")[0].timestamp.tzinfo is timezone.utc
+
+
 def test_retry_delay_doubles_after_each_failure(tmp_path):
     queue = DurableActionQueue(AuditLog(tmp_path / "queue.jsonl"))
     queue.enqueue(Action("fan", "set", 1, "test"), action_id="backoff", now=NOW)

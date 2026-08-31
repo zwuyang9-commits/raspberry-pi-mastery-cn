@@ -389,7 +389,7 @@ class DurableActionQueue:
             raise ValueError("retry_delay must not be negative")
         if lease_duration <= timedelta(0):
             raise ValueError("lease_duration must be positive")
-        timestamp = now or datetime.now(timezone.utc)
+        timestamp = _as_utc(now or datetime.now(timezone.utc))
         completed: list[str] = []
         failed: list[str] = []
         dead_lettered: list[str] = []
