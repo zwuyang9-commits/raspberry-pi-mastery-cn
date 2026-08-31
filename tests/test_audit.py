@@ -118,6 +118,32 @@ def test_audit_log_rejects_non_dictionary_payloads_on_append(tmp_path):
         log.append("event", "sensor", [("online", True)])  # type: ignore[arg-type]
 
 
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), object()])
+def test_audit_log_rejects_non_standard_payload_before_creating_log(tmp_path, value):
+    path = tmp_path / "hub.jsonl"
+    log = AuditLog(path)
+
+    with pytest.raises(ValueError, match="JSON-serializable finite"):
+        log.append("event", "sensor", {"value": value}, timestamp=NOW)
+
+    assert not path.exists()
+    assert not log._lock_path.exists()
+
+
+def test_audit_log_treats_non_standard_json_number_as_corruption(tmp_path):
+    path = tmp_path / "hub.jsonl"
+    path.write_text(
+        '{"timestamp":"2026-07-30T08:00:00+00:00","kind":"event",'
+        '"source":"sensor","payload":{"value":NaN}}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(AuditLogCorrupted) as error:
+        AuditLog(path).read()
+
+    assert error.value.line_number == 1
+
+
 def test_read_filters_by_source_and_closed_time_range(tmp_path):
     log = AuditLog(tmp_path / "audit.jsonl")
     log.append("event", "sensor-a", {"value": 1}, timestamp=NOW)

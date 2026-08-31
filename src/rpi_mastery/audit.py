@@ -50,6 +50,10 @@ def _as_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+def _reject_json_constant(value: str) -> Any:
+    raise ValueError(f"non-standard JSON number: {value}")
+
+
 @dataclass(frozen=True)
 class AuditEntry:
     timestamp: datetime
@@ -119,11 +123,22 @@ class AuditLog:
             **asdict(entry),
             "timestamp": entry.timestamp.isoformat(),
         }
+        try:
+            serialized = json.dumps(
+                encoded,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                allow_nan=False,
+            )
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "payload must contain JSON-serializable finite values"
+            ) from error
 
         with _exclusive_file_lock(self._lock_path):
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self.path.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(encoded, ensure_ascii=False, separators=(",", ":")))
+                handle.write(serialized)
                 handle.write("\n")
                 handle.flush()
                 os.fsync(handle.fileno())
@@ -153,7 +168,7 @@ class AuditLog:
                 if not line.strip():
                     continue
                 try:
-                    raw = json.loads(line)
+                    raw = json.loads(line, parse_constant=_reject_json_constant)
                     if not isinstance(raw, dict):
                         raise TypeError("audit record must be a JSON object")
 
@@ -293,7 +308,12 @@ class AuditLog:
                     "timestamp": entry.timestamp.isoformat(),
                 }
                 handle.write(
-                    json.dumps(encoded, ensure_ascii=False, separators=(",", ":"))
+                    json.dumps(
+                        encoded,
+                        ensure_ascii=False,
+                        separators=(",", ":"),
+                        allow_nan=False,
+                    )
                 )
                 handle.write("\n")
             handle.flush()
