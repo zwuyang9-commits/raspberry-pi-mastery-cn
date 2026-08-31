@@ -51,6 +51,25 @@ def test_cooldown_suppresses_repeated_event_then_allows_later_event():
     assert sentinel.stats.events_emitted == 2
 
 
+def test_expired_cooldown_labels_are_pruned():
+    sentinel = PrivacyFirstSentinel(required_consecutive=1, cooldown=timedelta(seconds=10))
+    assert len(
+        sentinel.process(
+            [Detection("person", 0.9), Detection("cat", 0.9)],
+            observed_at=NOW,
+        )
+    ) == 2
+    assert sentinel.rate_limited_labels == 2
+
+    assert len(
+        sentinel.process(
+            [Detection("vehicle", 0.9)],
+            observed_at=NOW + timedelta(seconds=11),
+        )
+    ) == 1
+    assert sentinel.rate_limited_labels == 1
+
+
 def test_uses_strongest_detection_for_each_label():
     sentinel = PrivacyFirstSentinel(required_consecutive=1, cooldown=timedelta(0))
 

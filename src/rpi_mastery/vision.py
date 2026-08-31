@@ -90,6 +90,12 @@ class PrivacyFirstSentinel:
             events_emitted=self._events_emitted,
         )
 
+    @property
+    def rate_limited_labels(self) -> int:
+        """Number of labels still retaining an active cooldown timestamp."""
+
+        return len(self._last_events)
+
     def process(
         self,
         detections: list[Detection],
@@ -104,6 +110,9 @@ class PrivacyFirstSentinel:
         if self._last_processed_at is not None and timestamp < self._last_processed_at:
             raise ValueError("frames must be processed in timestamp order")
         self._last_processed_at = timestamp
+        for label, last_event in tuple(self._last_events.items()):
+            if timestamp - last_event >= self.cooldown:
+                self._last_events.pop(label, None)
         self._frames_processed += 1
         self._detections_seen += len(detections)
 
