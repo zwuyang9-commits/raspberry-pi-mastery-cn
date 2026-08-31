@@ -34,6 +34,16 @@ curl --fail http://127.0.0.1:8000/health
 仓库 CI 会运行 `python scripts/smoke_api.py`，真实启动一个仅监听回环地址的进程并检查健康接口，
 而不只是导入应用或调用测试客户端。
 
+每次 CI 构建还会生成 `artifact-manifest.json`，记录版本、Git 提交、文件大小和 SHA-256；wheel、
+sdist 与清单作为同一构建产物保留 14 天。依赖审计同时输出 CycloneDX SBOM。下载后应先运行：
+
+```bash
+python scripts/artifact_manifest.py verify --commit <清单中的提交号>
+```
+
+若需要手动运行 Twine 元数据检查，应在生成清单前使用明确的发行文件模式：
+`python -m twine check dist/*.whl dist/*.tar.gz`。
+
 ## 更新与回滚
 
 更新前先记录当前提交并创建备份：
