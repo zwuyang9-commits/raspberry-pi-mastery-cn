@@ -108,3 +108,5 @@ python projects/02_environment_station/main.py --sensor bme280 --i2c-address 0x7
 
 更新内容记在 [`CHANGELOG.md`](CHANGELOG.md)。项目使用 MIT 许可证。涉及继电器、电机、电池或
 市电时，请使用合规器件，并让有资质的人检查接线。
+
+安全问题请按 [`SECURITY.md`](SECURITY.md) 私密报告，不要在公开 Issue 粘贴令牌、日志或设备信息。
