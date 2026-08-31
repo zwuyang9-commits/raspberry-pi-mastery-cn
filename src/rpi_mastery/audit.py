@@ -4,10 +4,40 @@ from __future__ import annotations
 
 import json
 import os
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+
+@contextmanager
+def _exclusive_file_lock(path: Path):
+    """Hold a cross-process lock that the OS releases if the writer exits."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+b") as handle:
+        if handle.seek(0, os.SEEK_END) == 0:
+            handle.write(b"\0")
+            handle.flush()
+        handle.seek(0)
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -60,6 +90,7 @@ class AuditLog:
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
+        self._lock_path = self.path.with_name(f".{self.path.name}.lock")
 
     def append(
         self,
@@ -89,12 +120,13 @@ class AuditLog:
             "timestamp": entry.timestamp.isoformat(),
         }
 
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        with self.path.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(encoded, ensure_ascii=False, separators=(",", ":")))
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
+        with _exclusive_file_lock(self._lock_path):
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with self.path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(encoded, ensure_ascii=False, separators=(",", ":")))
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
         return entry
 
     def read(
@@ -195,34 +227,35 @@ class AuditLog:
         source_path = self.path.resolve()
         if archive_path == source_path:
             raise ValueError("archive path must differ from source log")
-        entries = self.read()
-        archived = [entry for entry in entries if entry.timestamp < cutoff_utc]
-        retained = [entry for entry in entries if entry.timestamp >= cutoff_utc]
-        report = AuditArchiveReport(
-            source=source_path,
-            archive=archive_path,
-            archived_entries=len(archived),
-            retained_entries=len(retained),
-            applied=apply,
-        )
-        if not apply or not archived:
-            return report
-        if archive_path.exists():
-            raise FileExistsError(f"archive already exists: {archive_path}")
+        with _exclusive_file_lock(self._lock_path):
+            entries = self.read()
+            archived = [entry for entry in entries if entry.timestamp < cutoff_utc]
+            retained = [entry for entry in entries if entry.timestamp >= cutoff_utc]
+            report = AuditArchiveReport(
+                source=source_path,
+                archive=archive_path,
+                archived_entries=len(archived),
+                retained_entries=len(retained),
+                applied=apply,
+            )
+            if not apply or not archived:
+                return report
+            if archive_path.exists():
+                raise FileExistsError(f"archive already exists: {archive_path}")
 
-        archive_path.parent.mkdir(parents=True, exist_ok=True)
-        source_path.parent.mkdir(parents=True, exist_ok=True)
-        archive_temporary = archive_path.with_name(f".{archive_path.name}.tmp")
-        source_temporary = source_path.with_name(f".{source_path.name}.retained.tmp")
-        try:
-            self._write_entries(archive_temporary, archived)
-            self._write_entries(source_temporary, retained)
-            os.replace(archive_temporary, archive_path)
-            os.replace(source_temporary, source_path)
-        finally:
-            archive_temporary.unlink(missing_ok=True)
-            source_temporary.unlink(missing_ok=True)
-        return report
+            archive_path.parent.mkdir(parents=True, exist_ok=True)
+            source_path.parent.mkdir(parents=True, exist_ok=True)
+            archive_temporary = archive_path.with_name(f".{archive_path.name}.tmp")
+            source_temporary = source_path.with_name(f".{source_path.name}.retained.tmp")
+            try:
+                self._write_entries(archive_temporary, archived)
+                self._write_entries(source_temporary, retained)
+                os.replace(archive_temporary, archive_path)
+                os.replace(source_temporary, source_path)
+            finally:
+                archive_temporary.unlink(missing_ok=True)
+                source_temporary.unlink(missing_ok=True)
+            return report
 
     @staticmethod
     def _write_entries(path: Path, entries: list[AuditEntry]) -> None:

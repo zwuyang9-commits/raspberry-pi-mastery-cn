@@ -1,4 +1,5 @@
 import json
+import multiprocessing
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -6,6 +7,12 @@ import pytest
 from rpi_mastery.audit import AuditLog, AuditLogCorrupted
 
 NOW = datetime(2026, 7, 30, 8, 0, tzinfo=timezone.utc)
+
+
+def _append_audit_records(path, worker, count):
+    log = AuditLog(path)
+    for index in range(count):
+        log.append("concurrent", worker, {"index": index}, timestamp=NOW)
 
 
 def test_audit_log_appends_and_filters_records(tmp_path):
@@ -193,3 +200,26 @@ def test_archive_refuses_to_overwrite_existing_file(tmp_path):
 
     assert [entry.source for entry in log.read()] == ["old"]
     assert archive.read_text(encoding="utf-8") == "keep"
+
+
+def test_concurrent_processes_append_complete_jsonl_records(tmp_path):
+    path = tmp_path / "shared.jsonl"
+    context = multiprocessing.get_context("spawn")
+    workers = [
+        context.Process(target=_append_audit_records, args=(path, f"worker-{index}", 25))
+        for index in range(4)
+    ]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(timeout=15)
+
+    assert [worker.exitcode for worker in workers] == [0, 0, 0, 0]
+    entries = AuditLog(path).read(kind="concurrent")
+    assert len(entries) == 100
+    assert {entry.source for entry in entries} == {
+        "worker-0",
+        "worker-1",
+        "worker-2",
+        "worker-3",
+    }
