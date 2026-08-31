@@ -271,7 +271,14 @@ class AuditLog:
             self._write_entries(archive_temporary, archived)
             self._write_entries(source_temporary, retained)
             os.replace(archive_temporary, archive_path)
-            os.replace(source_temporary, source_path)
+            try:
+                os.replace(source_temporary, source_path)
+            except BaseException:
+                # The archive did not exist before this operation. Remove the
+                # newly published copy so callers can retry without duplicate
+                # records or an unexpected FileExistsError.
+                archive_path.unlink(missing_ok=True)
+                raise
         finally:
             archive_temporary.unlink(missing_ok=True)
             source_temporary.unlink(missing_ok=True)

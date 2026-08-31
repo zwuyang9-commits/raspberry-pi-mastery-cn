@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+import rpi_mastery.audit as audit_module
 from rpi_mastery.audit import AuditLog, AuditLogCorrupted
 
 NOW = datetime(2026, 7, 30, 8, 0, tzinfo=timezone.utc)
@@ -200,6 +201,31 @@ def test_archive_refuses_to_overwrite_existing_file(tmp_path):
 
     assert [entry.source for entry in log.read()] == ["old"]
     assert archive.read_text(encoding="utf-8") == "keep"
+
+
+def test_archive_rolls_back_published_copy_when_source_replace_fails(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "audit.jsonl"
+    archive = tmp_path / "archive.jsonl"
+    log = AuditLog(path)
+    log.append("event", "old", {}, timestamp=NOW)
+    log.append("event", "new", {}, timestamp=NOW + timedelta(days=1))
+    before = path.read_bytes()
+    real_replace = audit_module.os.replace
+
+    def fail_source_replace(source, destination):
+        if destination == path.resolve():
+            raise OSError("simulated source replacement failure")
+        real_replace(source, destination)
+
+    monkeypatch.setattr(audit_module.os, "replace", fail_source_replace)
+
+    with pytest.raises(OSError, match="simulated source replacement failure"):
+        log.archive_before(NOW + timedelta(hours=1), archive, apply=True)
+
+    assert path.read_bytes() == before
+    assert not archive.exists()
 
 
 def test_concurrent_processes_append_complete_jsonl_records(tmp_path):
