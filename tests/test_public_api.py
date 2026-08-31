@@ -2,7 +2,7 @@ import rpi_mastery
 
 
 def test_public_api_version_matches_release():
-    assert rpi_mastery.__version__ == "0.4.0"
+    assert rpi_mastery.__version__ == "0.5.0"
 
 
 def test_new_release_building_blocks_are_publicly_importable():

@@ -5,6 +5,7 @@ from .action_queue import (
     DispatchReport,
     DurableActionQueue,
     QueuedAction,
+    QueueStatus,
 )
 from .audit import AuditArchiveReport, AuditEntry, AuditLog, AuditLogCorrupted, AuditSummary
 from .automation import (
@@ -49,7 +50,7 @@ from .sensors import (
 )
 from .vision import Detection, PrivacyFirstSentinel, SentinelEvent, SentinelStats
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 __all__ = [
     "Action",
@@ -85,6 +86,7 @@ __all__ = [
     "LocalBackupManager",
     "LocalOperations",
     "PrivacyFirstSentinel",
+    "QueueStatus",
     "QueuedAction",
     "Reading",
     "ReloadableRuleEngine",
