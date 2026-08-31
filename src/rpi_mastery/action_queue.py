@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from collections.abc import Callable
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from threading import RLock
@@ -12,6 +14,35 @@ from uuid import uuid4
 
 from .audit import AuditLog
 from .automation import Action
+
+
+@contextmanager
+def _exclusive_file_lock(path):
+    """Hold a small OS-backed lock shared by queue instances and processes."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a+b") as handle:
+        if handle.seek(0, os.SEEK_END) == 0:
+            handle.write(b"\0")
+            handle.flush()
+        handle.seek(0)
+        if os.name == "nt":
+            import msvcrt
+
+            msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+            try:
+                yield
+            finally:
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 class ActionQueueError(ValueError):
@@ -45,6 +76,7 @@ class DurableActionQueue:
     def __init__(self, audit: AuditLog) -> None:
         self.audit = audit
         self._lock = RLock()
+        self._lock_path = audit.path.with_name(f".{audit.path.name}.queue.lock")
 
     def enqueue(
         self,
@@ -61,7 +93,7 @@ class DurableActionQueue:
         except (TypeError, ValueError) as error:
             raise ActionQueueError("action value must be JSON serializable") from error
 
-        with self._lock:
+        with self._lock, _exclusive_file_lock(self._lock_path):
             if identifier in self._known_ids():
                 raise ActionQueueError(f"action_id already exists: {identifier}")
             timestamp = now or datetime.now(timezone.utc)
@@ -261,7 +293,7 @@ class DurableActionQueue:
         dead_lettered: list[str] = []
         deferred: list[str] = []
         leased: list[str] = []
-        with self._lock:
+        with self._lock, _exclusive_file_lock(self._lock_path):
             items = self.pending()
             if max_items is not None:
                 items = items[:max_items]

@@ -1,3 +1,5 @@
+import multiprocessing
+import time
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -7,6 +9,17 @@ from rpi_mastery.audit import AuditLog
 from rpi_mastery.automation import Action
 
 NOW = datetime(2026, 8, 30, 9, 0, tzinfo=timezone.utc)
+
+
+def _dispatch_in_process(path, start, results):
+    queue = DurableActionQueue(AuditLog(path))
+    start.wait()
+
+    def handle(item):
+        time.sleep(0.2)
+
+    report = queue.dispatch(handle, now=NOW)
+    results.put(report.completed)
 
 
 def test_completed_action_is_removed_and_survives_restart(tmp_path):
@@ -234,3 +247,26 @@ def test_dispatch_rejects_non_positive_lease_duration(tmp_path):
     queue = DurableActionQueue(AuditLog(tmp_path / "queue.jsonl"))
     with pytest.raises(ValueError, match="lease_duration"):
         queue.dispatch(lambda item: None, lease_duration=timedelta(0))
+
+
+def test_process_lock_prevents_duplicate_concurrent_dispatch(tmp_path):
+    path = tmp_path / "queue.jsonl"
+    queue = DurableActionQueue(AuditLog(path))
+    queue.enqueue(Action("fan", "set", 1, "test"), action_id="once", now=NOW)
+    context = multiprocessing.get_context("spawn")
+    start = context.Event()
+    results = context.Queue()
+    workers = [
+        context.Process(target=_dispatch_in_process, args=(path, start, results))
+        for _ in range(2)
+    ]
+    for worker in workers:
+        worker.start()
+    start.set()
+    for worker in workers:
+        worker.join(timeout=10)
+
+    assert [worker.exitcode for worker in workers] == [0, 0]
+    reports = [results.get(timeout=1) for _ in workers]
+    assert sorted(reports, key=len) == [(), ("once",)]
+    assert queue.pending() == ()
