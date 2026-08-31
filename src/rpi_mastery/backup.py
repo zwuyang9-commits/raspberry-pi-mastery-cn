@@ -41,6 +41,19 @@ class BackupReport:
 
 
 @dataclass(frozen=True)
+class RestoreDrillReport:
+    """Evidence that an archive was verified and restored into an isolated directory."""
+
+    archive: Path
+    checked_at: datetime
+    files: tuple[BackupFile, ...]
+
+    @property
+    def total_size(self) -> int:
+        return sum(item.size for item in self.files)
+
+
+@dataclass(frozen=True)
 class BackupRotationPlan:
     """A reviewable retention plan; invalid archives are never removal candidates."""
 
@@ -171,6 +184,26 @@ class LocalBackupManager:
         finally:
             shutil.rmtree(stage, ignore_errors=True)
         return tuple(restored)
+
+    def drill(self, archive: str | Path) -> RestoreDrillReport:
+        """Perform a disposable restore and verify every extracted file again."""
+
+        report = self.verify(archive)
+        with tempfile.TemporaryDirectory(prefix="rpi-restore-drill-") as directory:
+            destination = Path(directory)
+            restored = self.restore(report.archive, destination)
+            if len(restored) != len(report.files):
+                raise BackupError("restore drill produced an unexpected file count")
+            for item in report.files:
+                restored_file = destination.joinpath(*PurePosixPath(item.path).parts)
+                if restored_file.stat().st_size != item.size or _sha256(restored_file) != item.sha256:
+                    raise BackupError(f"restore drill verification failed: {item.path}")
+
+        return RestoreDrillReport(
+            archive=report.archive,
+            checked_at=datetime.now(timezone.utc),
+            files=report.files,
+        )
 
     def rotate(
         self,

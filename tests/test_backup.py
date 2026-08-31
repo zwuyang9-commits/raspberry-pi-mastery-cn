@@ -62,6 +62,22 @@ def test_restore_requires_explicit_overwrite(tmp_path):
     assert json.loads((destination / "config.json").read_text(encoding="utf-8")) == {"enabled": True}
 
 
+def test_restore_drill_extracts_and_rechecks_without_touching_source(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    state = source / "state.json"
+    state.write_text('{"healthy":true}', encoding="utf-8")
+    manager = LocalBackupManager(source)
+    archive = manager.create(tmp_path / "backup.zip", ["state.json"]).archive
+
+    report = manager.drill(archive)
+
+    assert report.archive == archive
+    assert report.total_size == state.stat().st_size
+    assert report.checked_at.tzinfo == timezone.utc
+    assert state.read_text(encoding="utf-8") == '{"healthy":true}'
+
+
 def test_create_rejects_path_outside_source_root(tmp_path):
     source = tmp_path / "source"
     source.mkdir()

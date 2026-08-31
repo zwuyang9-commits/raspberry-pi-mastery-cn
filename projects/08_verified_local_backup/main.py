@@ -20,6 +20,9 @@ def build_parser() -> argparse.ArgumentParser:
     verify = subparsers.add_parser("verify", help="验证备份完整性")
     verify.add_argument("archive", type=Path)
 
+    drill = subparsers.add_parser("drill", help="在临时目录执行完整恢复演练")
+    drill.add_argument("archive", type=Path)
+
     restore = subparsers.add_parser("restore", help="恢复已验证的备份")
     restore.add_argument("archive", type=Path)
     restore.add_argument("destination", type=Path)
@@ -41,6 +44,12 @@ def main() -> None:
     elif args.command == "verify":
         report = manager.verify(args.archive)
         print(f"校验通过：{len(report.files)} 个文件，创建于 {report.created_at.isoformat()}")
+    elif args.command == "drill":
+        report = manager.drill(args.archive)
+        print(
+            f"恢复演练通过：{len(report.files)} 个文件，{report.total_size} 字节，"
+            f"检查于 {report.checked_at.isoformat()}"
+        )
     elif args.command == "restore":
         restored = manager.restore(args.archive, args.destination, overwrite=args.overwrite)
         print(f"已恢复 {len(restored)} 个文件到 {args.destination.resolve()}")

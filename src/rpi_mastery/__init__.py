@@ -22,6 +22,7 @@ from .backup import (
     BackupReport,
     BackupRotationPlan,
     LocalBackupManager,
+    RestoreDrillReport,
 )
 from .energy import EnergyScheduler, EnergyWindow, FlexibleLoad, ScheduleDecision
 from .hardware import DigitalOutput, SimulatedDigitalOutput, WatchdogOutput
@@ -90,6 +91,7 @@ __all__ = [
     "QueuedAction",
     "Reading",
     "ReloadableRuleEngine",
+    "RestoreDrillReport",
     "Rule",
     "RuleConfigError",
     "RuleEngine",
