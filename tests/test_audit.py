@@ -223,3 +223,22 @@ def test_concurrent_processes_append_complete_jsonl_records(tmp_path):
         "worker-2",
         "worker-3",
     }
+
+
+def test_generic_archive_refuses_to_split_queue_lifecycle(tmp_path):
+    path = tmp_path / "queue.jsonl"
+    archive = tmp_path / "archive.jsonl"
+    log = AuditLog(path)
+    log.append(
+        "queued_action_created",
+        "fan",
+        {"action_id": "keep-together"},
+        timestamp=NOW,
+    )
+    before = path.read_bytes()
+
+    with pytest.raises(ValueError, match="queue lifecycle"):
+        log.archive_before(NOW + timedelta(seconds=1), archive, apply=True)
+
+    assert path.read_bytes() == before
+    assert not archive.exists()

@@ -229,6 +229,10 @@ class AuditLog:
             raise ValueError("archive path must differ from source log")
         with _exclusive_file_lock(self._lock_path):
             entries = self.read()
+            if any(entry.kind.startswith("queued_action_") for entry in entries):
+                raise ValueError(
+                    "generic archival cannot split durable queue lifecycle records"
+                )
             archived = [entry for entry in entries if entry.timestamp < cutoff_utc]
             retained = [entry for entry in entries if entry.timestamp >= cutoff_utc]
             report = AuditArchiveReport(
