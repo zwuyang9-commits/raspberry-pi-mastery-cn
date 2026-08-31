@@ -29,6 +29,34 @@ def test_create_verify_and_restore_backup(tmp_path):
     assert (tmp_path / "restored" / "data" / "environment.csv").read_text(encoding="utf-8") == "temperature\n23.5\n"
 
 
+def test_create_keeps_previous_archive_when_source_changes_during_write(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    source.mkdir()
+    state = source / "state.txt"
+    state.write_text("stable", encoding="utf-8")
+    manager = LocalBackupManager(source)
+    archive = manager.create(tmp_path / "backup.zip", ["state.txt"], created_at=NOW).archive
+    expected = archive.read_bytes()
+    real_write = zipfile.ZipFile.write
+    changed = False
+
+    def change_source_before_write(bundle, filename, *args, **kwargs):
+        nonlocal changed
+        if not changed:
+            changed = True
+            Path(filename).write_text("change", encoding="utf-8")
+        return real_write(bundle, filename, *args, **kwargs)
+
+    monkeypatch.setattr(zipfile.ZipFile, "write", change_source_before_write)
+
+    with pytest.raises(BackupError, match="checksum mismatch"):
+        manager.create(archive, ["state.txt"])
+
+    assert archive.read_bytes() == expected
+    assert manager.verify(archive).created_at == NOW
+    assert list(tmp_path.glob(".backup.zip.*.tmp")) == []
+
+
 def test_verify_rejects_modified_payload(tmp_path):
     source = tmp_path / "source"
     source.mkdir()

@@ -128,7 +128,13 @@ class LocalBackupManager:
         }
 
         archive_path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = archive_path.with_name(f".{archive_path.name}.tmp")
+        descriptor, temporary_name = tempfile.mkstemp(
+            prefix=f".{archive_path.name}.",
+            suffix=".tmp",
+            dir=archive_path.parent,
+        )
+        os.close(descriptor)
+        temporary = Path(temporary_name)
         try:
             with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
                 for source, item in zip(selected, files, strict=True):
@@ -137,6 +143,7 @@ class LocalBackupManager:
                     MANIFEST_NAME,
                     json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
                 )
+            self.verify(temporary)
             os.replace(temporary, archive_path)
         finally:
             temporary.unlink(missing_ok=True)
