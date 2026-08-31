@@ -75,6 +75,23 @@ def test_verify_rejects_modified_payload(tmp_path):
         manager.verify(archive)
 
 
+def test_verify_rejects_duplicate_zip_entries(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "state.txt").write_text("state", encoding="utf-8")
+    manager = LocalBackupManager(source)
+    archive = manager.create(tmp_path / "backup.zip", ["state.txt"]).archive
+
+    with (
+        pytest.warns(UserWarning, match="Duplicate name"),
+        zipfile.ZipFile(archive, "a") as bundle,
+    ):
+        bundle.writestr("state.txt", b"state")
+
+    with pytest.raises(BackupError, match="duplicate entries"):
+        manager.verify(archive)
+
+
 def test_verify_streams_payload_instead_of_loading_it_at_once(tmp_path, monkeypatch):
     source = tmp_path / "source"
     source.mkdir()

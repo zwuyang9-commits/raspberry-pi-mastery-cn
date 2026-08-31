@@ -155,7 +155,10 @@ class LocalBackupManager:
             with zipfile.ZipFile(archive_path) as bundle:
                 manifest = self._read_manifest(bundle)
                 expected_names = {item.path for item in manifest.files} | {MANIFEST_NAME}
-                actual_names = set(bundle.namelist())
+                names = bundle.namelist()
+                actual_names = set(names)
+                if len(names) != len(actual_names):
+                    raise BackupError("archive contains duplicate entries")
                 if actual_names != expected_names:
                     raise BackupError("archive contents do not match manifest")
                 for item in manifest.files:
