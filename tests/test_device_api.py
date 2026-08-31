@@ -1,16 +1,18 @@
 import importlib
 
+import pytest
 from fastapi.testclient import TestClient
 
 from rpi_mastery.audit import AuditLog
 from rpi_mastery.hardware import SimulatedDigitalOutput
 
 device_api = importlib.import_module("projects.03_local_device_api.main")
+TOKEN = "bench-secret-0001"
 
 
 def test_token_protects_writes_and_output_closes_on_shutdown():
     output = SimulatedDigitalOutput()
-    app = device_api.create_app(output=output, token="bench-secret")
+    app = device_api.create_app(output=output, token=TOKEN)
 
     with TestClient(app) as client:
         denied = client.put("/output", json={"value": 0.5})
@@ -18,7 +20,7 @@ def test_token_protects_writes_and_output_closes_on_shutdown():
 
         response = client.put(
             "/output",
-            headers={"X-API-Token": "bench-secret"},
+            headers={"X-API-Token": TOKEN},
             json={"value": 0.5},
         )
         assert response.status_code == 200
@@ -29,7 +31,7 @@ def test_token_protects_writes_and_output_closes_on_shutdown():
 
 
 def test_health_reports_write_protection_mode():
-    app = device_api.create_app(token="bench-secret")
+    app = device_api.create_app(token=TOKEN)
 
     with TestClient(app) as client:
         response = client.get("/health")
@@ -85,8 +87,8 @@ def test_idempotency_key_replays_without_reapplying_output(tmp_path):
 
     output = CountingOutput()
     audit = AuditLog(tmp_path / "api.jsonl")
-    app = device_api.create_app(output=output, token="secret", audit=audit)
-    headers = {"X-API-Token": "secret", "Idempotency-Key": "request-0001"}
+    app = device_api.create_app(output=output, token=TOKEN, audit=audit)
+    headers = {"X-API-Token": TOKEN, "Idempotency-Key": "request-0001"}
 
     with TestClient(app) as client:
         first = client.put("/output", headers=headers, json={"value": 0.75})
@@ -102,10 +104,10 @@ def test_idempotency_key_replays_without_reapplying_output(tmp_path):
 
 def test_idempotency_key_rejects_different_command(tmp_path):
     app = device_api.create_app(
-        token="secret",
+        token=TOKEN,
         audit=AuditLog(tmp_path / "api.jsonl"),
     )
-    headers = {"X-API-Token": "secret", "Idempotency-Key": "request-0002"}
+    headers = {"X-API-Token": TOKEN, "Idempotency-Key": "request-0002"}
 
     with TestClient(app) as client:
         assert client.put("/output", headers=headers, json={"value": 0.25}).status_code == 200
@@ -116,16 +118,16 @@ def test_idempotency_key_rejects_different_command(tmp_path):
 
 def test_idempotency_survives_app_restart_when_audit_is_configured(tmp_path):
     audit = AuditLog(tmp_path / "api.jsonl")
-    headers = {"X-API-Token": "secret", "Idempotency-Key": "request-0003"}
+    headers = {"X-API-Token": TOKEN, "Idempotency-Key": "request-0003"}
     first_output = SimulatedDigitalOutput()
     with TestClient(
-        device_api.create_app(output=first_output, token="secret", audit=audit)
+        device_api.create_app(output=first_output, token=TOKEN, audit=audit)
     ) as client:
         client.put("/output", headers=headers, json={"value": 0.4})
 
     replacement_output = SimulatedDigitalOutput()
     with TestClient(
-        device_api.create_app(output=replacement_output, token="secret", audit=audit)
+        device_api.create_app(output=replacement_output, token=TOKEN, audit=audit)
     ) as client:
         replay = client.put("/output", headers=headers, json={"value": 0.4})
 
@@ -135,11 +137,31 @@ def test_idempotency_survives_app_restart_when_audit_is_configured(tmp_path):
 
 
 def test_rejects_short_idempotency_key():
-    with TestClient(device_api.create_app(token="secret")) as client:
+    with TestClient(device_api.create_app(token=TOKEN)) as client:
         response = client.put(
             "/output",
-            headers={"X-API-Token": "secret", "Idempotency-Key": "short"},
+            headers={"X-API-Token": TOKEN, "Idempotency-Key": "short"},
             json={"value": 0.5},
         )
 
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize("token", ["short", "contains space token", "令牌必须是ASCII字符且足够长"])
+def test_rejects_unsafe_configured_token(token: str) -> None:
+    with pytest.raises(ValueError, match="RPI_API_TOKEN"):
+        device_api.create_app(token=token)
+
+
+def test_non_ascii_supplied_token_is_rejected_without_server_error() -> None:
+    with TestClient(device_api.create_app(token=TOKEN)) as client:
+        response = client.put(
+            "/output",
+            headers=[
+                (b"X-API-Token", b"\xff" * 16),
+                (b"Idempotency-Key", b"request-0004"),
+            ],
+            json={"value": 0.5},
+        )
+
+    assert response.status_code == 401

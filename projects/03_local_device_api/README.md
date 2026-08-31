@@ -12,10 +12,11 @@ python scripts/run_api.py
 访问 `http://127.0.0.1:8000/docs`。没有设置令牌时，程序只接受来自本机的写请求；读取健康状态
 和当前输出不受影响。
 
-需要让局域网里的其他设备控制时，先设置令牌，再监听局域网地址：
+需要让局域网里的其他设备控制时，先设置至少 16 位、无空格的可打印 ASCII 随机令牌，再监听
+局域网地址：
 
 ```bash
-export RPI_API_TOKEN='换成一段足够长的随机字符串'
+export RPI_API_TOKEN='replace-with-random-token-123'
 export RPI_API_HOST=0.0.0.0
 python scripts/run_api.py
 ```
@@ -23,7 +24,7 @@ python scripts/run_api.py
 PowerShell 写法：
 
 ```powershell
-$env:RPI_API_TOKEN = '换成一段足够长的随机字符串'
+$env:RPI_API_TOKEN = 'replace-with-random-token-123'
 $env:RPI_API_HOST = '0.0.0.0'
 python scripts/run_api.py
 ```

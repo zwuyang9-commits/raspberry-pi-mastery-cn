@@ -13,6 +13,16 @@ class DeploymentConfigError(ValueError):
     """Raised when a service configuration is unsafe or invalid."""
 
 
+def api_token_issue(token: str) -> str | None:
+    """Return a safe diagnostic when an API token cannot be used securely."""
+
+    if len(token) < 16:
+        return "RPI_API_TOKEN must be at least 16 characters"
+    if any(ord(character) < 33 or ord(character) > 126 for character in token):
+        return "RPI_API_TOKEN must use printable ASCII without spaces"
+    return None
+
+
 @dataclass(frozen=True)
 class DeploymentCheck:
     name: str
@@ -68,8 +78,8 @@ class DeploymentConfig:
         except ValueError:
             loopback = host.lower() == "localhost"
 
-        if self.api_token is not None and len(self.api_token) < 16:
-            return DeploymentCheck("write-access", False, "RPI_API_TOKEN must be at least 16 characters")
+        if self.api_token is not None and (issue := api_token_issue(self.api_token)) is not None:
+            return DeploymentCheck("write-access", False, issue)
         if not loopback and self.api_token is None:
             return DeploymentCheck(
                 "write-access",

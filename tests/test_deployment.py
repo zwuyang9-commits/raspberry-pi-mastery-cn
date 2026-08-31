@@ -28,6 +28,12 @@ def test_non_loopback_deployment_accepts_strong_token() -> None:
     assert all(check.passed for check in config.require_safe())
 
 
+@pytest.mark.parametrize("token", ["short", "contains space token", "中文令牌不允许中文令牌"])
+def test_deployment_rejects_tokens_that_compare_digest_cannot_use(token: str) -> None:
+    with pytest.raises(DeploymentConfigError, match="RPI_API_TOKEN"):
+        DeploymentConfig(api_token=token).require_safe()
+
+
 @pytest.mark.parametrize("port", ["0", "65536", "not-a-port"])
 def test_invalid_port_is_rejected(port: str) -> None:
     with pytest.raises(DeploymentConfigError):

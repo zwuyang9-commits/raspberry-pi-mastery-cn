@@ -15,6 +15,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from rpi_mastery.audit import AuditLog
+from rpi_mastery.deployment import api_token_issue
 from rpi_mastery.hardware import DigitalOutput, SimulatedDigitalOutput
 
 
@@ -46,7 +47,10 @@ def create_app(
     device_mode = mode or (
         "simulated" if isinstance(device_output, SimulatedDigitalOutput) else "hardware"
     )
-    write_token = token if token is not None else os.getenv("RPI_API_TOKEN")
+    configured_token = token if token is not None else os.getenv("RPI_API_TOKEN")
+    write_token = configured_token or None
+    if write_token is not None and (issue := api_token_issue(write_token)) is not None:
+        raise ValueError(issue)
     if idempotency_cache_size < 1:
         raise ValueError("idempotency_cache_size must be positive")
     audit_path = os.getenv("RPI_API_AUDIT_LOG")
@@ -76,7 +80,11 @@ def create_app(
         supplied_token: Annotated[str | None, Header(alias="X-API-Token")] = None,
     ) -> None:
         if write_token:
-            if supplied_token is None or not hmac.compare_digest(supplied_token, write_token):
+            if (
+                supplied_token is None
+                or api_token_issue(supplied_token) is not None
+                or not hmac.compare_digest(supplied_token, write_token)
+            ):
                 raise HTTPException(401, "X-API-Token 不正确")
             return
         if not _is_loopback(request):
