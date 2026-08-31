@@ -37,6 +37,19 @@ def test_health_reports_write_protection_mode():
     assert response.json()["write_protection"] == "token"
 
 
+def test_health_reports_explicit_hardware_mode():
+    app = device_api.create_app(mode="hardware")
+
+    with TestClient(app) as client:
+        response = client.get("/health")
+
+    assert response.json() == {
+        "status": "ok",
+        "mode": "hardware",
+        "write_protection": "loopback-only",
+    }
+
+
 def test_idempotency_key_replays_without_reapplying_output(tmp_path):
     class CountingOutput(SimulatedDigitalOutput):
         def __init__(self):

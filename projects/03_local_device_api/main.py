@@ -36,10 +36,14 @@ def create_app(
     token: str | None = None,
     audit: AuditLog | None = None,
     idempotency_cache_size: int = 1000,
+    mode: str | None = None,
 ) -> FastAPI:
     """Create an API whose writes stay local unless a token is configured."""
 
     device_output = output if output is not None else SimulatedDigitalOutput()
+    device_mode = mode or (
+        "simulated" if isinstance(device_output, SimulatedDigitalOutput) else "hardware"
+    )
     write_token = token if token is not None else os.getenv("RPI_API_TOKEN")
     if idempotency_cache_size < 1:
         raise ValueError("idempotency_cache_size must be positive")
@@ -80,7 +84,7 @@ def create_app(
     def health() -> dict[str, str]:
         return {
             "status": "ok",
-            "mode": "simulated",
+            "mode": device_mode,
             "write_protection": "token" if write_token else "loopback-only",
         }
 

@@ -6,7 +6,7 @@
 只在树莓派本机使用时，保持 Uvicorn 默认的 `127.0.0.1` 即可：
 
 ```bash
-uvicorn projects.03_local_device_api.main:app --port 8000
+python scripts/run_api.py
 ```
 
 访问 `http://127.0.0.1:8000/docs`。没有设置令牌时，程序只接受来自本机的写请求；读取健康状态
@@ -16,14 +16,16 @@ uvicorn projects.03_local_device_api.main:app --port 8000
 
 ```bash
 export RPI_API_TOKEN='换成一段足够长的随机字符串'
-uvicorn projects.03_local_device_api.main:app --host 0.0.0.0 --port 8000
+export RPI_API_HOST=0.0.0.0
+python scripts/run_api.py
 ```
 
 PowerShell 写法：
 
 ```powershell
 $env:RPI_API_TOKEN = '换成一段足够长的随机字符串'
-uvicorn projects.03_local_device_api.main:app --host 0.0.0.0 --port 8000
+$env:RPI_API_HOST = '0.0.0.0'
+python scripts/run_api.py
 ```
 
 写入时把令牌放进 `X-API-Token` 请求头：
@@ -41,5 +43,6 @@ curl -X PUT http://树莓派IP:8000/output \
 同一个键配不同值会返回 409。设置 `RPI_API_AUDIT_LOG=data/device-api.jsonl` 后，幂等记录可在
 重启后恢复，每次首次写入和重放也会写入本地审计日志。
 
+安全启动脚本会先执行部署预检；可以用 `python scripts/run_api.py --check` 只检查而不启动。
 应用退出时会自动关闭输出并回到 0。真正接继电器前，还需要根据负载增加硬件隔离、保险和手动
 急停；令牌也不要提交进仓库。

@@ -72,7 +72,7 @@ python projects/08_verified_local_backup/main.py verify backups/state.zip
 局域网 API 需要 `web` 依赖：
 
 ```bash
-uvicorn projects.03_local_device_api.main:app --host 127.0.0.1 --port 8000
+python scripts/run_api.py
 ```
 
 启动后打开 `http://127.0.0.1:8000/docs`。默认只允许本机写入；要让局域网设备发送写请求，

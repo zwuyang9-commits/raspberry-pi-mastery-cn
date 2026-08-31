@@ -33,6 +33,7 @@ jobs:
       - run: ruff check .
       - run: pytest
       - run: python scripts/preflight.py --json
+      - run: python scripts/run_api.py --check
 
   package:
     name: Build and install package
@@ -70,3 +71,17 @@ jobs:
           "from importlib.metadata import version; import rpi_mastery;
           assert version('rpi-mastery') == rpi_mastery.__version__;
           assert rpi_mastery.QueueStatus.__name__ == 'QueueStatus'"
+
+  service-smoke:
+    name: Start API and check health
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: python -m pip install -e ".[web]"
+      - run: python scripts/smoke_api.py

@@ -14,7 +14,7 @@ export RPI_API_PORT=8000
 export RPI_API_TOKEN='replace-with-a-long-random-token'
 export RPI_API_AUDIT_LOG=/var/lib/rpi-mastery/api-audit.jsonl
 python scripts/preflight.py
-uvicorn projects.03_local_device_api.main:app --host "$RPI_API_HOST" --port "$RPI_API_PORT"
+python scripts/run_api.py
 ```
 
 预检会拒绝无效端口、局域网无令牌、短令牌、审计与队列共用同一文件，以及不可写的状态目录。
@@ -30,6 +30,9 @@ curl --fail http://127.0.0.1:8000/health
 
 返回 `status=ok` 后再把流量切换到新进程。局域网写操作还应使用唯一的 `Idempotency-Key`，
 避免网络重试导致动作重复执行。
+
+仓库 CI 会运行 `python scripts/smoke_api.py`，真实启动一个仅监听回环地址的进程并检查健康接口，
+而不只是导入应用或调用测试客户端。
 
 ## 更新与回滚
 
