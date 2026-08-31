@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import tempfile
+import unicodedata
 import zipfile
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -16,6 +17,14 @@ from typing import Any
 
 MANIFEST_NAME = "manifest.json"
 FORMAT_VERSION = 1
+WINDOWS_RESERVED_NAMES = {
+    "aux",
+    "con",
+    "nul",
+    "prn",
+    *(f"com{index}" for index in range(1, 10)),
+    *(f"lpt{index}" for index in range(1, 10)),
+}
 
 
 class BackupError(ValueError):
@@ -76,6 +85,22 @@ def _safe_relative_path(value: str) -> PurePosixPath:
     if path.is_absolute() or not path.parts or any(part in {"", ".", ".."} for part in path.parts):
         raise BackupError(f"unsafe backup path: {value}")
     return path
+
+
+def _portable_path_key(value: str) -> tuple[str, ...]:
+    """Return a cross-platform comparison key or reject a Windows-invalid path."""
+
+    key: list[str] = []
+    for part in PurePosixPath(value).parts:
+        normalized = unicodedata.normalize("NFC", part)
+        if (
+            normalized.rstrip(" .") != normalized
+            or any(ord(character) < 32 or character in '<>:"\\|?*' for character in normalized)
+            or normalized.casefold().split(".", 1)[0] in WINDOWS_RESERVED_NAMES
+        ):
+            raise BackupError(f"backup path is not portable to Windows: {value}")
+        key.append(normalized.casefold())
+    return tuple(key)
 
 
 def _safe_restore_path(root: Path, relative: PurePosixPath) -> Path:
@@ -340,15 +365,17 @@ class LocalBackupManager:
             )
             if not files or len({item.path for item in files}) != len(files):
                 raise BackupError("manifest contains no files or duplicate paths")
+            portable_paths: list[tuple[str, ...]] = []
             for item in files:
                 _safe_relative_path(item.path)
+                portable_paths.append(_portable_path_key(item.path))
                 if (
                     item.size < 0
                     or len(item.sha256) != 64
                     or any(character not in "0123456789abcdef" for character in item.sha256)
                 ):
                     raise BackupError(f"invalid manifest entry: {item.path}")
-            if len({item.path.casefold() for item in files}) != len(files):
+            if len(set(portable_paths)) != len(files):
                 raise BackupError("manifest contains case-insensitive path collisions")
             return BackupReport(Path(), created_at, files)
         except BackupError:

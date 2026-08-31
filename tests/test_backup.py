@@ -113,6 +113,23 @@ def test_verify_rejects_case_insensitive_path_collisions(tmp_path):
         LocalBackupManager(tmp_path).verify(archive)
 
 
+@pytest.mark.parametrize("path", ["NUL.txt", "bad:name.txt", "trailing. "])
+def test_verify_rejects_paths_that_cannot_be_restored_on_windows(tmp_path, path):
+    archive = tmp_path / "backup.zip"
+    content = b"x"
+    manifest = {
+        "format_version": 1,
+        "created_at": NOW.isoformat(),
+        "files": [{"path": path, "size": 1, "sha256": hashlib.sha256(content).hexdigest()}],
+    }
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr(path, content)
+        bundle.writestr(backup_module.MANIFEST_NAME, json.dumps(manifest))
+
+    with pytest.raises(BackupError, match="not portable to Windows"):
+        LocalBackupManager(tmp_path).verify(archive)
+
+
 def test_verify_streams_payload_instead_of_loading_it_at_once(tmp_path, monkeypatch):
     source = tmp_path / "source"
     source.mkdir()
