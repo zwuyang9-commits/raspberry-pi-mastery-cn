@@ -31,13 +31,17 @@ def main() -> int:
                 break
             try:
                 with urlopen("http://127.0.0.1:8765/health", timeout=1) as response:
-                    payload = json.load(response)
-                if payload != {
+                    health = json.load(response)
+                with urlopen("http://127.0.0.1:8765/ready", timeout=1) as response:
+                    readiness = json.load(response)
+                if health != {
                     "status": "ok",
                     "mode": "simulated",
                     "write_protection": "loopback-only",
                 }:
-                    raise RuntimeError(f"unexpected health response: {payload}")
+                    raise RuntimeError(f"unexpected health response: {health}")
+                if readiness != {"status": "ready", "mode": "simulated"}:
+                    raise RuntimeError(f"unexpected readiness response: {readiness}")
                 print("API process smoke test passed")
                 return 0
             except URLError:
@@ -53,6 +57,7 @@ def main() -> int:
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait(timeout=5)
+                raise RuntimeError("API process did not stop gracefully")
 
 
 if __name__ == "__main__":

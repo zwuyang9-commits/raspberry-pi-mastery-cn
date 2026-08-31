@@ -4,6 +4,7 @@ import hmac
 import os
 import re
 from collections import OrderedDict
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from ipaddress import ip_address
 from pathlib import Path
@@ -37,6 +38,7 @@ def create_app(
     audit: AuditLog | None = None,
     idempotency_cache_size: int = 1000,
     mode: str | None = None,
+    readiness_probe: Callable[[], None] | None = None,
 ) -> FastAPI:
     """Create an API whose writes stay local unless a token is configured."""
 
@@ -87,6 +89,16 @@ def create_app(
             "mode": device_mode,
             "write_protection": "token" if write_token else "loopback-only",
         }
+
+    @api.get("/ready")
+    def ready() -> dict[str, str]:
+        try:
+            _ = device_output.value
+            if readiness_probe is not None:
+                readiness_probe()
+        except Exception as error:
+            raise HTTPException(503, "设备服务尚未就绪") from error
+        return {"status": "ready", "mode": device_mode}
 
     @api.get("/output")
     def get_output() -> dict[str, float]:

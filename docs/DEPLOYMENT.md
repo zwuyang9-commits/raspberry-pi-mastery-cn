@@ -26,13 +26,15 @@ python scripts/run_api.py
 
 ```bash
 curl --fail http://127.0.0.1:8000/health
+curl --fail http://127.0.0.1:8000/ready
 ```
 
-返回 `status=ok` 后再把流量切换到新进程。局域网写操作还应使用唯一的 `Idempotency-Key`，
+`/health` 只表示进程存活；`/ready` 还会检查输出设备和可选硬件探针。两者都成功后再把流量
+切换到新进程。局域网写操作还应使用唯一的 `Idempotency-Key`，
 避免网络重试导致动作重复执行。
 
-仓库 CI 会运行 `python scripts/smoke_api.py`，真实启动一个仅监听回环地址的进程并检查健康接口，
-而不只是导入应用或调用测试客户端。
+仓库 CI 会运行 `python scripts/smoke_api.py`，真实启动一个仅监听回环地址的进程，检查存活与
+就绪接口，再验证进程能在限定时间内正常关闭，而不只是导入应用或调用测试客户端。
 
 每次 CI 构建还会生成 `artifact-manifest.json`，记录版本、Git 提交、文件大小和 SHA-256；wheel、
 sdist 与清单作为同一构建产物保留 14 天。依赖审计同时输出 CycloneDX SBOM。下载后应先运行：

@@ -50,6 +50,29 @@ def test_health_reports_explicit_hardware_mode():
     }
 
 
+def test_readiness_probe_reports_ready() -> None:
+    calls = []
+    app = device_api.create_app(readiness_probe=lambda: calls.append("checked"))
+
+    with TestClient(app) as client:
+        response = client.get("/ready")
+
+    assert response.json() == {"status": "ready", "mode": "simulated"}
+    assert calls == ["checked"]
+
+
+def test_readiness_probe_failure_returns_503_without_error_details() -> None:
+    def unavailable() -> None:
+        raise RuntimeError("internal hardware detail")
+
+    app = device_api.create_app(readiness_probe=unavailable)
+    with TestClient(app) as client:
+        response = client.get("/ready")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": "设备服务尚未就绪"}
+
+
 def test_idempotency_key_replays_without_reapplying_output(tmp_path):
     class CountingOutput(SimulatedDigitalOutput):
         def __init__(self):
