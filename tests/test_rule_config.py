@@ -83,7 +83,21 @@ def test_rejects_threshold_that_overflows_to_infinity(tmp_path):
     content = path.read_text(encoding="utf-8").replace('"value": 30', '"value": 1e999', 1)
     path.write_text(content, encoding="utf-8")
 
-    with pytest.raises(RuleConfigError, match="threshold must be finite"):
+    with pytest.raises(RuleConfigError, match="non-standard JSON number"):
+        load_rule_engine(path)
+
+
+def test_rejects_overflowing_float_inside_action_value(tmp_path):
+    path = tmp_path / "rules.json"
+    write_config(path)
+    content = path.read_text(encoding="utf-8").replace(
+        '"value": 1, "reason"',
+        '"value": 1e999, "reason"',
+        1,
+    )
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(RuleConfigError, match="non-standard JSON number"):
         load_rule_engine(path)
 
 

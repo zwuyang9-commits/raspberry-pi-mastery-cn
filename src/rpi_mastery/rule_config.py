@@ -37,6 +37,13 @@ def _reject_json_constant(value: str) -> Any:
     raise RuleConfigError(f"non-standard JSON number: {value}")
 
 
+def _parse_json_float(value: str) -> float:
+    parsed = float(value)
+    if not math.isfinite(parsed):
+        raise RuleConfigError(f"non-standard JSON number: {value}")
+    return parsed
+
+
 def _required_text(raw: dict[str, Any], key: str, rule_name: str) -> str:
     value = raw.get(key)
     if not isinstance(value, str) or not value.strip():
@@ -91,6 +98,7 @@ def load_rule_engine(path: str | Path) -> RuleEngine:
             config_path.read_text(encoding="utf-8"),
             object_pairs_hook=_unique_json_object,
             parse_constant=_reject_json_constant,
+            parse_float=_parse_json_float,
         )
     except (OSError, json.JSONDecodeError) as error:
         raise RuleConfigError(f"cannot read rule config: {config_path}") from error
