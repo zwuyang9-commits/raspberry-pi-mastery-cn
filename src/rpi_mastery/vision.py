@@ -20,6 +20,8 @@ class Detection:
         if not normalized_label:
             raise ValueError("detection label cannot be empty")
         object.__setattr__(self, "label", normalized_label)
+        if isinstance(self.confidence, bool) or not isinstance(self.confidence, (int, float)):
+            raise TypeError("detection confidence must be numeric")
         if not math.isfinite(self.confidence) or not 0.0 <= self.confidence <= 1.0:
             raise ValueError("detection confidence must be between 0 and 1")
 
@@ -58,10 +60,16 @@ class PrivacyFirstSentinel:
         required_consecutive: int = 2,
         cooldown: timedelta = timedelta(seconds=30),
     ) -> None:
+        if isinstance(threshold, bool) or not isinstance(threshold, (int, float)):
+            raise TypeError("threshold must be numeric")
         if not math.isfinite(threshold) or not 0.0 <= threshold <= 1.0:
             raise ValueError("threshold must be between 0 and 1")
+        if not isinstance(required_consecutive, int) or isinstance(required_consecutive, bool):
+            raise TypeError("required_consecutive must be an integer")
         if required_consecutive < 1:
             raise ValueError("required_consecutive must be positive")
+        if not isinstance(cooldown, timedelta):
+            raise TypeError("cooldown must be a timedelta")
         if cooldown < timedelta(0):
             raise ValueError("cooldown cannot be negative")
         self.threshold = threshold

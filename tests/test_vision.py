@@ -90,3 +90,22 @@ def test_rejects_invalid_detection_and_out_of_order_frame():
     sentinel.process([], observed_at=NOW)
     with pytest.raises(ValueError, match="timestamp order"):
         sentinel.process([], observed_at=NOW - timedelta(seconds=1))
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"threshold": True}, "threshold must be numeric"),
+        ({"required_consecutive": True}, "must be an integer"),
+        ({"required_consecutive": 1.5}, "must be an integer"),
+        ({"cooldown": 30}, "must be a timedelta"),
+    ],
+)
+def test_rejects_ambiguous_sentinel_option_types(kwargs, message):
+    with pytest.raises(TypeError, match=message):
+        PrivacyFirstSentinel(**kwargs)
+
+
+def test_rejects_non_numeric_detection_confidence():
+    with pytest.raises(TypeError, match="confidence must be numeric"):
+        Detection("person", "0.9")
