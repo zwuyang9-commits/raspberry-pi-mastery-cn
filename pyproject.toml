@@ -8,14 +8,14 @@ version = "0.5.0"
 description = "树莓派本地自动化的中文实验代码与笔记"
 readme = "README.md"
 requires-python = ">=3.10"
-license = {file = "LICENSE"}
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [
     {name = "zwuyang9-commits"},
 ]
 keywords = ["raspberry-pi", "gpio", "offline-first", "home-automation"]
 classifiers = [
     "Development Status :: 3 - Alpha",
-    "License :: OSI Approved :: MIT License",
     "Natural Language :: Chinese (Simplified)",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -39,7 +39,14 @@ pi = [
     "adafruit-circuitpython-bme280>=2.6",
 ]
 web = ["fastapi>=0.115", "uvicorn>=0.30"]
-dev = ["pytest>=8.0", "ruff>=0.6", "fastapi>=0.115", "httpx2>=2.0,<3"]
+dev = [
+    "build>=1.2",
+    "fastapi>=0.115",
+    "httpx2>=2.0,<3",
+    "pytest>=8.0",
+    "ruff>=0.6",
+    "twine>=6.0",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]

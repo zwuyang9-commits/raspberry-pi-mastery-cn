@@ -31,3 +31,26 @@ jobs:
       - run: python -m pip install -e ".[dev]"
       - run: ruff check .
       - run: pytest
+
+  package:
+    name: Build and install package
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - run: python -m build
+      - run: python -m twine check dist/*
+      - run: python -m venv .package-test
+      - run: .package-test/bin/python -m pip install --no-deps dist/*.whl
+      - name: Verify installed metadata and public API
+        run: >-
+          .package-test/bin/python -c
+          "from importlib.metadata import version; import rpi_mastery;
+          assert version('rpi-mastery') == rpi_mastery.__version__;
+          assert rpi_mastery.QueueStatus.__name__ == 'QueueStatus'"
