@@ -149,7 +149,11 @@ class DurableActionQueue:
                         next_attempt_at=next_attempt_at,
                         lease_expires_at=None,
                     )
-                elif entry.kind in {"queued_action_completed", "queued_action_dead_lettered"}:
+                elif entry.kind in {
+                    "queued_action_completed",
+                    "queued_action_dead_lettered",
+                    "queued_action_cancelled",
+                }:
                     active.pop(identifier, None)
             return tuple(active[identifier] for identifier in order if identifier in active)
 
@@ -237,6 +241,31 @@ class DurableActionQueue:
             if item is None:
                 raise ActionQueueError(f"dead letter not found: {action_id}")
             return self.enqueue(item.action, action_id=new_action_id, now=now)
+
+    def cancel(
+        self,
+        action_id: str,
+        *,
+        reason: str,
+        now: datetime | None = None,
+    ) -> None:
+        """Cancel pending work while preserving an auditable terminal record."""
+
+        if not reason.strip():
+            raise ValueError("cancellation reason cannot be empty")
+        with self._lock, _exclusive_file_lock(self._lock_path):
+            item = next(
+                (candidate for candidate in self.pending() if candidate.action_id == action_id),
+                None,
+            )
+            if item is None:
+                raise ActionQueueError(f"pending action not found: {action_id}")
+            self.audit.append(
+                "queued_action_cancelled",
+                item.action.target,
+                {"action_id": action_id, "reason": reason.strip()},
+                timestamp=now,
+            )
 
     def dispatch(
         self,

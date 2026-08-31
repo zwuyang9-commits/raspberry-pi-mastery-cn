@@ -270,3 +270,36 @@ def test_process_lock_prevents_duplicate_concurrent_dispatch(tmp_path):
     reports = [results.get(timeout=1) for _ in workers]
     assert sorted(reports, key=len) == [(), ("once",)]
     assert queue.pending() == ()
+
+
+def test_pending_action_can_be_cancelled_and_stays_cancelled_after_restart(tmp_path):
+    audit = AuditLog(tmp_path / "queue.jsonl")
+    queue = DurableActionQueue(audit)
+    queue.enqueue(Action("pump", "set", 1, "rule"), action_id="cancel-me", now=NOW)
+
+    queue.cancel("cancel-me", reason="maintenance window", now=NOW)
+
+    assert DurableActionQueue(audit).pending() == ()
+    [entry] = audit.read(kind="queued_action_cancelled")
+    assert entry.payload == {
+        "action_id": "cancel-me",
+        "reason": "maintenance window",
+    }
+
+
+def test_cancel_rejects_unknown_or_completed_action(tmp_path):
+    queue = DurableActionQueue(AuditLog(tmp_path / "queue.jsonl"))
+    with pytest.raises(ActionQueueError, match="pending action not found"):
+        queue.cancel("missing", reason="not needed", now=NOW)
+
+    queue.enqueue(Action("fan", "set", 1, "test"), action_id="done", now=NOW)
+    queue.dispatch(lambda item: None, now=NOW)
+    with pytest.raises(ActionQueueError, match="pending action not found"):
+        queue.cancel("done", reason="too late", now=NOW)
+
+
+def test_cancel_requires_a_reason(tmp_path):
+    queue = DurableActionQueue(AuditLog(tmp_path / "queue.jsonl"))
+    queue.enqueue(Action("fan", "set", 1, "test"), action_id="pending", now=NOW)
+    with pytest.raises(ValueError, match="reason"):
+        queue.cancel("pending", reason="   ", now=NOW)

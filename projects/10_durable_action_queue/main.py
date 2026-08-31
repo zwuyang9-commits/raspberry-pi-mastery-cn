@@ -35,6 +35,9 @@ def build_parser() -> argparse.ArgumentParser:
     requeue = commands.add_parser("requeue", help="用新 ID 重新加入死信动作")
     requeue.add_argument("action_id")
     requeue.add_argument("--new-id")
+    cancel = commands.add_parser("cancel", help="取消一个待执行动作")
+    cancel.add_argument("action_id")
+    cancel.add_argument("--reason", required=True)
     return parser
 
 
@@ -80,6 +83,11 @@ def main() -> None:
     if args.command == "requeue":
         item = queue.requeue_dead_letter(args.action_id, new_action_id=args.new_id)
         print(json.dumps({"action_id": item.action_id, "status": "pending"}, ensure_ascii=False))
+        return
+
+    if args.command == "cancel":
+        queue.cancel(args.action_id, reason=args.reason)
+        print(json.dumps({"action_id": args.action_id, "status": "cancelled"}))
         return
 
     def simulate(item: QueuedAction) -> None:

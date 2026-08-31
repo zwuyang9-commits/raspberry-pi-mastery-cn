@@ -23,6 +23,12 @@ python projects/10_durable_action_queue/main.py list-dead
 python projects/10_durable_action_queue/main.py requeue fan-command-001 --new-id fan-command-002
 ```
 
+误加入的待办可以带原因取消，取消记录会保留在审计日志中：
+
+```bash
+python projects/10_durable_action_queue/main.py cancel fan-command-001 --reason "设备维护"
+```
+
 调用 `dispatch` 时可传入 `retry_delay`。连续失败会按 1、2、4 倍延长等待时间；下次重试时间
 写入审计日志，因此程序重启后仍会遵守退避窗口，不会对离线设备进行紧密重试。
 
