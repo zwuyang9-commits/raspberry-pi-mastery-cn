@@ -114,6 +114,41 @@ def test_watchdog_returns_to_safe_value_when_timer_cannot_start():
     assert underlying.history == [0.75, 0.0]
 
 
+def test_watchdog_explicitly_sets_safe_value_before_closing_adapter():
+    class PassiveCloseOutput(SimulatedDigitalOutput):
+        def close(self):
+            self.closed = True
+
+    FakeTimer.created = []
+    underlying = PassiveCloseOutput()
+    output = WatchdogOutput(underlying, timeout=5, safe_value=0.1, timer_factory=FakeTimer)
+    output.set(0.75)
+
+    output.close()
+
+    assert output.value == 0.1
+    assert underlying.history == [0.75, 0.1]
+    assert underlying.closed is True
+
+
+def test_watchdog_still_closes_adapter_when_safe_write_fails():
+    class FailingSafeOutput(SimulatedDigitalOutput):
+        def set(self, value):
+            if value == 0.0:
+                raise RuntimeError("safe write failed")
+            super().set(value)
+
+    FakeTimer.created = []
+    underlying = FailingSafeOutput()
+    output = WatchdogOutput(underlying, timeout=5, timer_factory=FakeTimer)
+    output.set(0.75)
+
+    with pytest.raises(RuntimeError, match="safe write failed"):
+        output.close()
+
+    assert underlying.closed is True
+
+
 def test_watchdog_validates_timeout_and_safe_value():
     with pytest.raises(ValueError, match="timeout"):
         WatchdogOutput(SimulatedDigitalOutput(), timeout=0)

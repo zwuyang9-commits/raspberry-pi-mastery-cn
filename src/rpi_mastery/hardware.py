@@ -82,9 +82,25 @@ class WatchdogOutput:
                 return
             self._closed = True
             self._generation += 1
+            cancel_error: Exception | None = None
             if self._timer is not None:
-                self._timer.cancel()
-            self._output.close()
+                try:
+                    self._timer.cancel()
+                except Exception as error:  # noqa: BLE001 - timer implementations vary
+                    cancel_error = error
+            safe_error: Exception | None = None
+            try:
+                self._output.set(self.safe_value)
+            except Exception as error:  # noqa: BLE001 - adapters expose driver-specific errors
+                safe_error = error
+            close_error: Exception | None = None
+            try:
+                self._output.close()
+            except Exception as error:  # noqa: BLE001 - adapters expose driver-specific errors
+                close_error = error
+            failure = safe_error or close_error or cancel_error
+            if failure is not None:
+                raise failure
 
     def _arm(self) -> None:
         self._generation += 1
