@@ -63,6 +63,25 @@ def test_uses_strongest_detection_for_each_label():
     assert sentinel.stats.detections_seen == 2
 
 
+def test_normalizes_labels_for_confirmation_and_cooldown():
+    sentinel = PrivacyFirstSentinel(
+        required_consecutive=2,
+        cooldown=timedelta(seconds=30),
+    )
+
+    assert sentinel.process([Detection(" Person ", 0.9)], observed_at=NOW) == []
+    [event] = sentinel.process(
+        [Detection("PERSON", 0.9)],
+        observed_at=NOW + timedelta(seconds=1),
+    )
+    assert event.label == "person"
+    assert event.confirmed_frames == 2
+    assert sentinel.process(
+        [Detection("person", 0.9)],
+        observed_at=NOW + timedelta(seconds=2),
+    ) == []
+
+
 def test_rejects_invalid_detection_and_out_of_order_frame():
     with pytest.raises(ValueError, match="confidence"):
         Detection("person", 1.1)

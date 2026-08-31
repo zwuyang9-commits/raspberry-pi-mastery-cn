@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -13,8 +14,12 @@ class Detection:
     confidence: float
 
     def __post_init__(self) -> None:
-        if not self.label.strip():
+        if not isinstance(self.label, str):
+            raise TypeError("detection label must be text")
+        normalized_label = unicodedata.normalize("NFC", self.label).strip().casefold()
+        if not normalized_label:
             raise ValueError("detection label cannot be empty")
+        object.__setattr__(self, "label", normalized_label)
         if not math.isfinite(self.confidence) or not 0.0 <= self.confidence <= 1.0:
             raise ValueError("detection confidence must be between 0 and 1")
 
