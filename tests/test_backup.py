@@ -1,3 +1,4 @@
+import hashlib
 import json
 import zipfile
 from datetime import datetime, timezone
@@ -90,6 +91,26 @@ def test_verify_rejects_duplicate_zip_entries(tmp_path):
 
     with pytest.raises(BackupError, match="duplicate entries"):
         manager.verify(archive)
+
+
+def test_verify_rejects_case_insensitive_path_collisions(tmp_path):
+    archive = tmp_path / "backup.zip"
+    digest = hashlib.sha256(b"x").hexdigest()
+    manifest = {
+        "format_version": 1,
+        "created_at": NOW.isoformat(),
+        "files": [
+            {"path": "State.txt", "size": 1, "sha256": digest},
+            {"path": "state.txt", "size": 1, "sha256": digest},
+        ],
+    }
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("State.txt", b"x")
+        bundle.writestr("state.txt", b"x")
+        bundle.writestr(backup_module.MANIFEST_NAME, json.dumps(manifest))
+
+    with pytest.raises(BackupError, match="case-insensitive path collisions"):
+        LocalBackupManager(tmp_path).verify(archive)
 
 
 def test_verify_streams_payload_instead_of_loading_it_at_once(tmp_path, monkeypatch):

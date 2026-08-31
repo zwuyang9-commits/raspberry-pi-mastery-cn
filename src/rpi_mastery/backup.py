@@ -348,6 +348,10 @@ class LocalBackupManager:
                     or any(character not in "0123456789abcdef" for character in item.sha256)
                 ):
                     raise BackupError(f"invalid manifest entry: {item.path}")
+            if len({item.path.casefold() for item in files}) != len(files):
+                raise BackupError("manifest contains case-insensitive path collisions")
             return BackupReport(Path(), created_at, files)
+        except BackupError:
+            raise
         except (AttributeError, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
             raise BackupError("invalid backup manifest") from error
