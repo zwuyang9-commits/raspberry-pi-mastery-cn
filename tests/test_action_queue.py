@@ -303,3 +303,53 @@ def test_cancel_requires_a_reason(tmp_path):
     queue.enqueue(Action("fan", "set", 1, "test"), action_id="pending", now=NOW)
     with pytest.raises(ValueError, match="reason"):
         queue.cancel("pending", reason="   ", now=NOW)
+
+
+def test_terminal_archive_preserves_pending_dead_letters_and_id_tombstones(tmp_path):
+    path = tmp_path / "queue.jsonl"
+    archive = tmp_path / "terminal.jsonl"
+    audit = AuditLog(path)
+    queue = DurableActionQueue(audit)
+    queue.enqueue(Action("fan", "set", 1, "done"), action_id="done", now=NOW)
+    queue.dispatch(lambda item: None, now=NOW)
+    queue.enqueue(Action("pump", "set", 0, "cancel"), action_id="cancelled", now=NOW)
+    queue.cancel("cancelled", reason="maintenance", now=NOW)
+    queue.enqueue(Action("valve", "set", 0, "dead"), action_id="dead", now=NOW)
+    queue.dispatch(
+        lambda item: (_ for _ in ()).throw(RuntimeError("offline")),
+        max_attempts=1,
+        now=NOW,
+    )
+    queue.enqueue(Action("light", "set", 1, "pending"), action_id="pending", now=NOW)
+
+    report = queue.archive_terminal_before(
+        NOW + timedelta(seconds=1), archive, apply=True
+    )
+
+    assert report.archived_entries == 5
+    assert {entry.payload["action_id"] for entry in AuditLog(archive).read()} == {
+        "done",
+        "cancelled",
+    }
+    assert [item.action_id for item in queue.pending()] == ["pending"]
+    assert [item.action_id for item in queue.dead_letters()] == ["dead"]
+    tombstones = audit.read(kind="queued_action_archived")
+    assert {entry.payload["action_id"] for entry in tombstones} == {"done", "cancelled"}
+    with pytest.raises(ActionQueueError, match="already exists"):
+        queue.enqueue(Action("fan", "set", 0, "reuse"), action_id="done", now=NOW)
+
+
+def test_terminal_archive_preview_does_not_modify_queue(tmp_path):
+    path = tmp_path / "queue.jsonl"
+    archive = tmp_path / "terminal.jsonl"
+    queue = DurableActionQueue(AuditLog(path))
+    queue.enqueue(Action("fan", "set", 1, "done"), action_id="done", now=NOW)
+    queue.dispatch(lambda item: None, now=NOW)
+    before = path.read_bytes()
+
+    report = queue.archive_terminal_before(NOW + timedelta(seconds=1), archive)
+
+    assert report.applied is False
+    assert report.archived_entries == 3
+    assert path.read_bytes() == before
+    assert not archive.exists()

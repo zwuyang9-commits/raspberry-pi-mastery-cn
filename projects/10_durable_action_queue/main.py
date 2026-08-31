@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from rpi_mastery.action_queue import DurableActionQueue, QueuedAction
@@ -38,6 +38,10 @@ def build_parser() -> argparse.ArgumentParser:
     cancel = commands.add_parser("cancel", help="取消一个待执行动作")
     cancel.add_argument("action_id")
     cancel.add_argument("--reason", required=True)
+    archive = commands.add_parser("archive-terminal", help="归档已结束的完整动作生命周期")
+    archive.add_argument("cutoff", help="带时区的 ISO 8601 截止时间")
+    archive.add_argument("archive", type=Path)
+    archive.add_argument("--apply", action="store_true")
     return parser
 
 
@@ -88,6 +92,17 @@ def main() -> None:
     if args.command == "cancel":
         queue.cancel(args.action_id, reason=args.reason)
         print(json.dumps({"action_id": args.action_id, "status": "cancelled"}))
+        return
+
+    if args.command == "archive-terminal":
+        try:
+            cutoff = datetime.fromisoformat(args.cutoff)
+        except ValueError as error:
+            raise SystemExit("cutoff 必须是有效的 ISO 8601 时间") from error
+        if cutoff.tzinfo is None:
+            raise SystemExit("cutoff 必须包含时区")
+        report = queue.archive_terminal_before(cutoff, args.archive, apply=args.apply)
+        print(json.dumps({**report.__dict__, "source": str(report.source), "archive": str(report.archive)}))
         return
 
     def simulate(item: QueuedAction) -> None:

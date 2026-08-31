@@ -235,31 +235,47 @@ class AuditLog:
                 )
             archived = [entry for entry in entries if entry.timestamp < cutoff_utc]
             retained = [entry for entry in entries if entry.timestamp >= cutoff_utc]
-            report = AuditArchiveReport(
-                source=source_path,
-                archive=archive_path,
-                archived_entries=len(archived),
-                retained_entries=len(retained),
-                applied=apply,
-            )
-            if not apply or not archived:
-                return report
-            if archive_path.exists():
-                raise FileExistsError(f"archive already exists: {archive_path}")
+            return self._archive_partition(archive_path, archived, retained, apply=apply)
 
-            archive_path.parent.mkdir(parents=True, exist_ok=True)
-            source_path.parent.mkdir(parents=True, exist_ok=True)
-            archive_temporary = archive_path.with_name(f".{archive_path.name}.tmp")
-            source_temporary = source_path.with_name(f".{source_path.name}.retained.tmp")
-            try:
-                self._write_entries(archive_temporary, archived)
-                self._write_entries(source_temporary, retained)
-                os.replace(archive_temporary, archive_path)
-                os.replace(source_temporary, source_path)
-            finally:
-                archive_temporary.unlink(missing_ok=True)
-                source_temporary.unlink(missing_ok=True)
+    def _archive_partition(
+        self,
+        archive_path: Path,
+        archived: list[AuditEntry],
+        retained: list[AuditEntry],
+        *,
+        apply: bool,
+    ) -> AuditArchiveReport:
+        """Atomically replace this log with a caller-validated partition."""
+
+        source_path = self.path.resolve()
+        archive_path = archive_path.resolve()
+        if archive_path == source_path:
+            raise ValueError("archive path must differ from source log")
+        report = AuditArchiveReport(
+            source=source_path,
+            archive=archive_path,
+            archived_entries=len(archived),
+            retained_entries=len(retained),
+            applied=apply,
+        )
+        if not apply or not archived:
             return report
+        if archive_path.exists():
+            raise FileExistsError(f"archive already exists: {archive_path}")
+
+        archive_path.parent.mkdir(parents=True, exist_ok=True)
+        source_path.parent.mkdir(parents=True, exist_ok=True)
+        archive_temporary = archive_path.with_name(f".{archive_path.name}.tmp")
+        source_temporary = source_path.with_name(f".{source_path.name}.retained.tmp")
+        try:
+            self._write_entries(archive_temporary, archived)
+            self._write_entries(source_temporary, retained)
+            os.replace(archive_temporary, archive_path)
+            os.replace(source_temporary, source_path)
+        finally:
+            archive_temporary.unlink(missing_ok=True)
+            source_temporary.unlink(missing_ok=True)
+        return report
 
     @staticmethod
     def _write_entries(path: Path, entries: list[AuditEntry]) -> None:

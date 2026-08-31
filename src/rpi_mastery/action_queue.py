@@ -7,10 +7,17 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from threading import RLock
 from uuid import uuid4
 
-from .audit import AuditLog, _exclusive_file_lock
+from .audit import (
+    AuditArchiveReport,
+    AuditEntry,
+    AuditLog,
+    _as_utc,
+    _exclusive_file_lock,
+)
 from .automation import Action
 
 
@@ -267,6 +274,61 @@ class DurableActionQueue:
                 timestamp=now,
             )
 
+    def archive_terminal_before(
+        self,
+        cutoff: datetime,
+        archive: str | Path,
+        *,
+        apply: bool = False,
+    ) -> AuditArchiveReport:
+        """Archive complete terminal lifecycles and retain ID tombstones."""
+
+        cutoff_utc = _as_utc(cutoff)
+        archive_path = Path(archive)
+        with self._lock, _exclusive_file_lock(self._lock_path):  # noqa: SIM117
+            with _exclusive_file_lock(self.audit._lock_path):
+                entries = self.audit.read()
+                terminal: dict[str, AuditEntry] = {}
+                for entry in entries:
+                    identifier = entry.payload.get("action_id")
+                    if (
+                        isinstance(identifier, str)
+                        and entry.kind
+                        in {"queued_action_completed", "queued_action_cancelled"}
+                    ):
+                        terminal[identifier] = entry
+                identifiers = {
+                    identifier
+                    for identifier, entry in terminal.items()
+                    if entry.timestamp < cutoff_utc
+                }
+                archived = [
+                    entry
+                    for entry in entries
+                    if entry.kind.startswith("queued_action_")
+                    and entry.payload.get("action_id") in identifiers
+                ]
+                retained = [entry for entry in entries if entry not in archived]
+                for identifier in sorted(identifiers):
+                    terminal_entry = terminal[identifier]
+                    retained.append(
+                        AuditEntry(
+                            terminal_entry.timestamp,
+                            "queued_action_archived",
+                            terminal_entry.source,
+                            {
+                                "action_id": identifier,
+                                "terminal_kind": terminal_entry.kind,
+                            },
+                        )
+                    )
+                return self.audit._archive_partition(
+                    archive_path,
+                    archived,
+                    retained,
+                    apply=apply,
+                )
+
     def dispatch(
         self,
         handler: Callable[[QueuedAction], None],
@@ -356,7 +418,9 @@ class DurableActionQueue:
 
     def _known_ids(self) -> set[str]:
         identifiers: set[str] = set()
-        for entry in self.audit.read(kind="queued_action_created"):
+        for entry in self.audit.read():
+            if entry.kind not in {"queued_action_created", "queued_action_archived"}:
+                continue
             identifier = entry.payload.get("action_id")
             if isinstance(identifier, str):
                 identifiers.add(identifier)

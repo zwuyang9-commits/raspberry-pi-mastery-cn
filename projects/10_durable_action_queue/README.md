@@ -39,7 +39,15 @@ python projects/10_durable_action_queue/main.py cancel fan-command-001 --reason 
 保护区内，因此同一台主机上的多个工作进程不会同时执行相同队列；进程退出后锁会由系统释放。
 
 不要对队列 JSONL 调用通用 `AuditLog.archive_before`：拆开一个动作的生命周期会破坏重启恢复。
-库会主动拒绝这种操作；队列归档应保留完整生命周期和已使用动作 ID 的墓碑记录。
+库会主动拒绝这种操作。使用专用命令先预览，再显式应用：
+
+```bash
+python projects/10_durable_action_queue/main.py archive-terminal 2026-09-01T00:00:00+00:00 archives/queue.jsonl
+python projects/10_durable_action_queue/main.py archive-terminal 2026-09-01T00:00:00+00:00 archives/queue.jsonl --apply
+```
+
+专用归档只移动已完成或已取消的完整生命周期，保留待办与死信，并留下已使用动作 ID 的墓碑，
+防止旧 ID 被重新使用。
 
 重新入队必须使用新 ID，避免下游把它误判为已经处理过的旧命令。演示处理器不控制真实硬件；接 GPIO、MQTT 或 HTTP
 设备时，要把动作 ID 传到下游，并让设备拒绝重复执行已经完成的 ID。
