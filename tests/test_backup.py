@@ -142,6 +142,23 @@ def test_create_rejects_path_outside_source_root(tmp_path):
         LocalBackupManager(source).create(tmp_path / "backup.zip", [outside])
 
 
+def test_create_rejects_direct_symlink_to_file_inside_source(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    target = source / "state.txt"
+    target.write_text("state", encoding="utf-8")
+    link = source / "latest.txt"
+    try:
+        link.symlink_to(target)
+    except OSError as error:
+        pytest.skip(f"symbolic links are unavailable: {error}")
+
+    with pytest.raises(BackupError, match="symbolic links are not supported"):
+        LocalBackupManager(source).create(tmp_path / "backup.zip", ["latest.txt"])
+
+    assert not (tmp_path / "backup.zip").exists()
+
+
 def test_rotation_previews_then_removes_only_verified_old_backups(tmp_path):
     source = tmp_path / "source"
     source.mkdir()

@@ -284,13 +284,19 @@ class LocalBackupManager:
     def _collect(self, paths: Iterable[str | Path]) -> list[Path]:
         collected: set[Path] = set()
         for value in paths:
-            candidate = (self.source_root / value).resolve()
+            candidate = Path(os.path.abspath(self.source_root / value))
+            if not candidate.is_relative_to(self.source_root):
+                raise BackupError(f"path is outside source root: {value}")
+            current = self.source_root
+            for part in candidate.relative_to(self.source_root).parts:
+                current /= part
+                if current.is_symlink():
+                    raise BackupError(f"symbolic links are not supported: {value}")
+            candidate = candidate.resolve()
             if not candidate.is_relative_to(self.source_root):
                 raise BackupError(f"path is outside source root: {value}")
             if not candidate.exists():
                 raise BackupError(f"backup source does not exist: {value}")
-            if candidate.is_symlink():
-                raise BackupError(f"symbolic links are not supported: {value}")
             if candidate.is_file():
                 collected.add(candidate)
             else:
