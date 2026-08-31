@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import timedelta
 from pathlib import Path
 
 from rpi_mastery.action_queue import DurableActionQueue, QueuedAction
@@ -29,6 +30,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--fail-target", help="模拟指定目标执行失败")
     run.add_argument("--max-items", type=int)
     run.add_argument("--max-attempts", type=int, default=3)
+    run.add_argument("--retry-delay", type=float, default=0, help="首次重试等待秒数")
     requeue = commands.add_parser("requeue", help="用新 ID 重新加入死信动作")
     requeue.add_argument("action_id")
     requeue.add_argument("--new-id")
@@ -62,6 +64,9 @@ def main() -> None:
                         "value": item.action.value,
                         "attempts": item.attempts,
                         "last_error": item.last_error,
+                        "next_attempt_at": (
+                            item.next_attempt_at.isoformat() if item.next_attempt_at else None
+                        ),
                     },
                     ensure_ascii=False,
                 )
@@ -82,6 +87,7 @@ def main() -> None:
         simulate,
         max_items=args.max_items,
         max_attempts=args.max_attempts,
+        retry_delay=timedelta(seconds=args.retry_delay),
     )
     print(json.dumps(report.__dict__, ensure_ascii=False))
 

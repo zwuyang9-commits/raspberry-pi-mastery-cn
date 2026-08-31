@@ -6,7 +6,7 @@ import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from threading import RLock
 from uuid import uuid4
 
@@ -25,6 +25,7 @@ class QueuedAction:
     enqueued_at: datetime
     attempts: int = 0
     last_error: str | None = None
+    next_attempt_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -33,6 +34,7 @@ class DispatchReport:
     completed: tuple[str, ...]
     failed: tuple[str, ...]
     dead_lettered: tuple[str, ...] = ()
+    deferred: tuple[str, ...] = ()
 
 
 class DurableActionQueue:
@@ -109,12 +111,26 @@ class DurableActionQueue:
                     )
                 elif entry.kind == "queued_action_failed" and identifier in active:
                     item = active[identifier]
+                    raw_next_attempt = entry.payload.get("next_attempt_at")
+                    try:
+                        next_attempt_at = (
+                            datetime.fromisoformat(raw_next_attempt)
+                            if isinstance(raw_next_attempt, str)
+                            else None
+                        )
+                    except ValueError as error:
+                        raise ActionQueueError(
+                            f"invalid next attempt time: {identifier}"
+                        ) from error
+                    if next_attempt_at is not None and next_attempt_at.tzinfo is None:
+                        raise ActionQueueError(f"next attempt time has no timezone: {identifier}")
                     active[identifier] = QueuedAction(
                         item.action_id,
                         item.action,
                         item.enqueued_at,
                         attempts=item.attempts,
                         last_error=str(entry.payload.get("error", "unknown error")),
+                        next_attempt_at=next_attempt_at,
                     )
                 elif entry.kind in {"queued_action_completed", "queued_action_dead_lettered"}:
                     active.pop(identifier, None)
@@ -153,12 +169,24 @@ class DurableActionQueue:
                     )
                 elif entry.kind == "queued_action_failed" and identifier in known:
                     item = known[identifier]
+                    raw_next_attempt = entry.payload.get("next_attempt_at")
+                    try:
+                        next_attempt_at = (
+                            datetime.fromisoformat(raw_next_attempt)
+                            if isinstance(raw_next_attempt, str)
+                            else None
+                        )
+                    except ValueError as error:
+                        raise ActionQueueError(
+                            f"invalid next attempt time: {identifier}"
+                        ) from error
                     known[identifier] = QueuedAction(
                         item.action_id,
                         item.action,
                         item.enqueued_at,
                         attempts=item.attempts,
                         last_error=str(entry.payload.get("error", "unknown error")),
+                        next_attempt_at=next_attempt_at,
                     )
                 elif entry.kind == "queued_action_dead_lettered" and identifier in known:
                     dead[identifier] = known[identifier]
@@ -187,21 +215,28 @@ class DurableActionQueue:
         *,
         max_items: int | None = None,
         max_attempts: int = 3,
+        retry_delay: timedelta = timedelta(0),
         now: datetime | None = None,
     ) -> DispatchReport:
         if max_items is not None and max_items < 1:
             raise ValueError("max_items must be positive")
         if max_attempts < 1:
             raise ValueError("max_attempts must be positive")
+        if retry_delay < timedelta(0):
+            raise ValueError("retry_delay must not be negative")
         timestamp = now or datetime.now(timezone.utc)
         completed: list[str] = []
         failed: list[str] = []
         dead_lettered: list[str] = []
+        deferred: list[str] = []
         with self._lock:
             items = self.pending()
             if max_items is not None:
                 items = items[:max_items]
             for item in items:
+                if item.next_attempt_at is not None and timestamp < item.next_attempt_at:
+                    deferred.append(item.action_id)
+                    continue
                 payload = {"action_id": item.action_id}
                 self.audit.append(
                     "queued_action_attempted",
@@ -213,10 +248,16 @@ class DurableActionQueue:
                     handler(item)
                 except Exception as error:  # noqa: BLE001 - device adapters vary
                     message = str(error).replace("\n", " ")[:200]
+                    next_attempt_at = timestamp + retry_delay * (2**item.attempts)
                     self.audit.append(
                         "queued_action_failed",
                         item.action.target,
-                        {**payload, "error": message, "error_type": type(error).__name__},
+                        {
+                            **payload,
+                            "error": message,
+                            "error_type": type(error).__name__,
+                            "next_attempt_at": next_attempt_at.isoformat(),
+                        },
                         timestamp=timestamp,
                     )
                     failed.append(item.action_id)
@@ -241,6 +282,7 @@ class DurableActionQueue:
             tuple(completed),
             tuple(failed),
             tuple(dead_lettered),
+            tuple(deferred),
         )
 
     def _known_ids(self) -> set[str]:

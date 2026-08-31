@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -127,3 +127,53 @@ def test_dispatch_validates_attempt_limit(tmp_path):
     queue = DurableActionQueue(AuditLog(tmp_path / "queue.jsonl"))
     with pytest.raises(ValueError, match="max_attempts"):
         queue.dispatch(lambda item: None, max_attempts=0)
+
+
+def test_failed_action_waits_for_persisted_exponential_backoff(tmp_path):
+    audit = AuditLog(tmp_path / "queue.jsonl")
+    queue = DurableActionQueue(audit)
+    queue.enqueue(Action("fan", "set", 1, "test"), action_id="retry-later", now=NOW)
+
+    first = queue.dispatch(
+        lambda item: (_ for _ in ()).throw(RuntimeError("offline")),
+        retry_delay=timedelta(seconds=10),
+        now=NOW,
+    )
+    deferred = DurableActionQueue(audit).dispatch(
+        lambda item: pytest.fail("handler ran before backoff elapsed"),
+        retry_delay=timedelta(seconds=10),
+        now=NOW + timedelta(seconds=9),
+    )
+    handled = []
+    retried = DurableActionQueue(audit).dispatch(
+        handled.append,
+        retry_delay=timedelta(seconds=10),
+        now=NOW + timedelta(seconds=10),
+    )
+
+    assert first.failed == ("retry-later",)
+    assert deferred.deferred == ("retry-later",)
+    assert deferred.processed == 0
+    assert [item.action_id for item in handled] == ["retry-later"]
+    assert retried.completed == ("retry-later",)
+
+
+def test_retry_delay_doubles_after_each_failure(tmp_path):
+    queue = DurableActionQueue(AuditLog(tmp_path / "queue.jsonl"))
+    queue.enqueue(Action("fan", "set", 1, "test"), action_id="backoff", now=NOW)
+
+    def fail(item):
+        raise RuntimeError("offline")
+
+    queue.dispatch(fail, retry_delay=timedelta(seconds=5), now=NOW)
+    queue.dispatch(fail, retry_delay=timedelta(seconds=5), now=NOW + timedelta(seconds=5))
+    [pending] = queue.pending()
+
+    assert pending.attempts == 2
+    assert pending.next_attempt_at == NOW + timedelta(seconds=15)
+
+
+def test_dispatch_rejects_negative_retry_delay(tmp_path):
+    queue = DurableActionQueue(AuditLog(tmp_path / "queue.jsonl"))
+    with pytest.raises(ValueError, match="retry_delay"):
+        queue.dispatch(lambda item: None, retry_delay=timedelta(seconds=-1))
