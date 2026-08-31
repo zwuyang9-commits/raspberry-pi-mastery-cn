@@ -24,6 +24,7 @@ from .backup import (
     LocalBackupManager,
     RestoreDrillReport,
 )
+from .deployment import DeploymentCheck, DeploymentConfig, DeploymentConfigError
 from .energy import EnergyScheduler, EnergyWindow, FlexibleLoad, ScheduleDecision
 from .hardware import DigitalOutput, SimulatedDigitalOutput, WatchdogOutput
 from .health import DeviceHealthMonitor, DeviceHeartbeat, DeviceStatus
@@ -71,6 +72,9 @@ __all__ = [
     "BackupReport",
     "BackupRotationPlan",
     "DHT22Sensor",
+    "DeploymentCheck",
+    "DeploymentConfig",
+    "DeploymentConfigError",
     "Detection",
     "DeviceHealthMonitor",
     "DeviceHeartbeat",

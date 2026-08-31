@@ -25,6 +25,9 @@
 课程顺序和每一步的练习记在 [`docs/CURRICULUM.md`](docs/CURRICULUM.md)，接线前先看
 [`docs/SAFETY.md`](docs/SAFETY.md)。每个项目目录也有一份短说明。
 
+准备长期运行或监听局域网前，请按 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) 执行部署预检、
+健康检查、更新备份和回滚演练。
+
 ## 先在电脑上跑起来
 
 ```bash

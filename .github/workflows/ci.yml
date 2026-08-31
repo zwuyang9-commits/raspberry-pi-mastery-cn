@@ -32,6 +32,7 @@ jobs:
       - run: python -m pip install -e ".[dev]"
       - run: ruff check .
       - run: pytest
+      - run: python scripts/preflight.py --json
 
   package:
     name: Build and install package
