@@ -78,6 +78,17 @@ def _safe_relative_path(value: str) -> PurePosixPath:
     return path
 
 
+def _safe_restore_path(root: Path, relative: PurePosixPath) -> Path:
+    """Reject existing symlinks anywhere below a restore destination."""
+
+    candidate = root
+    for part in relative.parts:
+        candidate /= part
+        if candidate.is_symlink():
+            raise BackupError(f"restore target contains a symbolic link: {candidate}")
+    return candidate
+
+
 class LocalBackupManager:
     """Creates, verifies and restores portable ZIP backups."""
 
@@ -158,14 +169,26 @@ class LocalBackupManager:
         overwrite: bool = False,
     ) -> tuple[Path, ...]:
         report = self.verify(archive)
-        target_root = Path(destination).resolve()
-        conflicts = [target_root / Path(item.path) for item in report.files if (target_root / Path(item.path)).exists()]
+        requested_root = Path(destination)
+        if requested_root.is_symlink():
+            raise BackupError(f"restore destination is a symbolic link: {requested_root}")
+        target_root = requested_root.resolve()
+        targets = [
+            _safe_restore_path(target_root, _safe_relative_path(item.path))
+            for item in report.files
+        ]
+        invalid_targets = [path for path in targets if path.exists() and not path.is_file()]
+        if invalid_targets:
+            raise BackupError(f"restore target is not a regular file: {invalid_targets[0]}")
+        conflicts = [path for path in targets if path.exists()]
         if conflicts and not overwrite:
             raise BackupError(f"restore target already exists: {conflicts[0]}")
 
         target_root.mkdir(parents=True, exist_ok=True)
         stage = Path(tempfile.mkdtemp(prefix="rpi-backup-", dir=target_root))
+        rollback = Path(tempfile.mkdtemp(prefix="rpi-rollback-", dir=target_root))
         restored: list[Path] = []
+        applied: list[tuple[Path, Path | None]] = []
         try:
             with zipfile.ZipFile(report.archive) as bundle:
                 for item in report.files:
@@ -177,12 +200,33 @@ class LocalBackupManager:
             for item in report.files:
                 relative = _safe_relative_path(item.path)
                 staged = stage.joinpath(*relative.parts)
-                final = target_root.joinpath(*relative.parts)
+                final = _safe_restore_path(target_root, relative)
                 final.parent.mkdir(parents=True, exist_ok=True)
+                final = _safe_restore_path(target_root, relative)
+                previous: Path | None = None
+                if final.exists():
+                    previous = rollback.joinpath(*relative.parts)
+                    previous.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(final, previous)
+                applied.append((final, previous))
                 os.replace(staged, final)
                 restored.append(final)
+        except (BackupError, OSError) as error:
+            rollback_failure: OSError | None = None
+            for final, previous in reversed(applied):
+                try:
+                    final.unlink(missing_ok=True)
+                    if previous is not None and previous.exists():
+                        final.parent.mkdir(parents=True, exist_ok=True)
+                        os.replace(previous, final)
+                except OSError as rollback_error:
+                    rollback_failure = rollback_error
+            if rollback_failure is not None:
+                raise BackupError("restore failed and rollback was incomplete") from rollback_failure
+            raise BackupError("restore failed; previous files were restored") from error
         finally:
             shutil.rmtree(stage, ignore_errors=True)
+            shutil.rmtree(rollback, ignore_errors=True)
         return tuple(restored)
 
     def drill(self, archive: str | Path) -> RestoreDrillReport:

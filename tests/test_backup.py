@@ -1,9 +1,11 @@
 import json
 import zipfile
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
+import rpi_mastery.backup as backup_module
 from rpi_mastery.backup import BackupError, LocalBackupManager
 
 NOW = datetime(2026, 8, 30, 8, 0, tzinfo=timezone.utc)
@@ -60,6 +62,58 @@ def test_restore_requires_explicit_overwrite(tmp_path):
 
     manager.restore(archive, destination, overwrite=True)
     assert json.loads((destination / "config.json").read_text(encoding="utf-8")) == {"enabled": True}
+
+
+def test_restore_rejects_symlink_inside_destination(tmp_path):
+    source = tmp_path / "source"
+    (source / "data").mkdir(parents=True)
+    (source / "data" / "state.txt").write_text("protected", encoding="utf-8")
+    manager = LocalBackupManager(source)
+    archive = manager.create(tmp_path / "backup.zip", ["data"]).archive
+    destination = tmp_path / "restored"
+    destination.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    try:
+        (destination / "data").symlink_to(outside, target_is_directory=True)
+    except OSError as error:
+        pytest.skip(f"symbolic links are unavailable: {error}")
+
+    with pytest.raises(BackupError, match="symbolic link"):
+        manager.restore(archive, destination, overwrite=True)
+
+    assert list(outside.iterdir()) == []
+
+
+def test_restore_rolls_back_every_file_when_commit_fails(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "first.txt").write_text("new first", encoding="utf-8")
+    (source / "second.txt").write_text("new second", encoding="utf-8")
+    manager = LocalBackupManager(source)
+    archive = manager.create(tmp_path / "backup.zip", ["first.txt", "second.txt"]).archive
+    destination = tmp_path / "restored"
+    destination.mkdir()
+    (destination / "first.txt").write_text("old first", encoding="utf-8")
+    (destination / "second.txt").write_text("old second", encoding="utf-8")
+    real_replace = backup_module.os.replace
+    failed = False
+
+    def fail_second_commit(source_path, destination_path):
+        nonlocal failed
+        source_value = str(source_path)
+        if not failed and "rpi-backup-" in source_value and Path(source_path).name == "second.txt":
+            failed = True
+            raise OSError("simulated storage failure")
+        return real_replace(source_path, destination_path)
+
+    monkeypatch.setattr(backup_module.os, "replace", fail_second_commit)
+
+    with pytest.raises(BackupError, match="previous files were restored"):
+        manager.restore(archive, destination, overwrite=True)
+
+    assert (destination / "first.txt").read_text(encoding="utf-8") == "old first"
+    assert (destination / "second.txt").read_text(encoding="utf-8") == "old second"
 
 
 def test_restore_drill_extracts_and_rechecks_without_touching_source(tmp_path):
