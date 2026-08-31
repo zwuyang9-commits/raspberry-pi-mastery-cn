@@ -118,7 +118,7 @@ class AlertManager:
             return alert
 
         timestamp = now or datetime.now(timezone.utc)
-        self.audit.append(
+        entry = self.audit.append(
             "alert_acknowledged",
             alert.source,
             {"code": code},
@@ -127,7 +127,7 @@ class AlertManager:
         return replace(
             alert,
             state=AlertState.ACKNOWLEDGED,
-            acknowledged_at=timestamp,
+            acknowledged_at=entry.timestamp,
         )
 
     def _active_alerts(self) -> dict[str, Alert]:

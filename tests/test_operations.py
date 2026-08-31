@@ -100,6 +100,27 @@ def test_acknowledgement_survives_snapshots_and_resets_after_recovery(tmp_path):
     assert reopened.severity is AlertSeverity.CRITICAL
 
 
+def test_acknowledgement_returns_the_persisted_utc_timestamp(tmp_path):
+    operations = build_operations(tmp_path)
+    operations.record_heartbeat(
+        "sensor",
+        expected_interval=timedelta(seconds=30),
+        critical=True,
+        seen_at=NOW - timedelta(seconds=61),
+    )
+    operations.snapshot(now=NOW)
+
+    acknowledged = operations.acknowledge_alert(
+        "device:sensor",
+        now=NOW.replace(tzinfo=None),
+    )
+    persisted = operations.audit.read(kind="alert_acknowledged")[0]
+
+    assert acknowledged.acknowledged_at == NOW
+    assert acknowledged.acknowledged_at == persisted.timestamp
+    assert acknowledged.acknowledged_at.tzinfo is timezone.utc
+
+
 def test_snapshot_rejects_invalid_recent_action_limit(tmp_path):
     operations = build_operations(tmp_path)
 

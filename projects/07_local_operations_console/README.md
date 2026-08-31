@@ -25,3 +25,4 @@ python projects/07_local_operations_console/main.py --ack device:water-valve
 
 同一个问题恢复后会自动关闭；以后再次出现时会重新打开，不会沿用上一次的确认状态。示例
 使用模拟数据，接入真实设备时只需把心跳、传感器事件和电价时段传给 `LocalOperations`。
+确认操作返回的时间与审计日志一致，传入无时区时间时统一按 UTC 记录。
