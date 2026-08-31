@@ -152,10 +152,14 @@ class LocalBackupManager:
                 if actual_names != expected_names:
                     raise BackupError("archive contents do not match manifest")
                 for item in manifest.files:
-                    content = bundle.read(item.path)
-                    if len(content) != item.size:
+                    entry = bundle.getinfo(item.path)
+                    if entry.is_dir() or entry.file_size != item.size:
                         raise BackupError(f"size mismatch: {item.path}")
-                    if hashlib.sha256(content).hexdigest() != item.sha256:
+                    digest = hashlib.sha256()
+                    with bundle.open(entry) as source:
+                        for chunk in iter(lambda: source.read(1024 * 1024), b""):
+                            digest.update(chunk)
+                    if digest.hexdigest() != item.sha256:
                         raise BackupError(f"checksum mismatch: {item.path}")
                 return BackupReport(archive_path, manifest.created_at, manifest.files)
         except (OSError, zipfile.BadZipFile, KeyError) as error:

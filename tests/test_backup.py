@@ -47,6 +47,24 @@ def test_verify_rejects_modified_payload(tmp_path):
         manager.verify(archive)
 
 
+def test_verify_streams_payload_instead_of_loading_it_at_once(tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "state.bin").write_bytes(b"state" * 300_000)
+    manager = LocalBackupManager(source)
+    archive = manager.create(tmp_path / "backup.zip", ["state.bin"]).archive
+    real_read = zipfile.ZipFile.read
+
+    def allow_manifest_read_only(bundle, name, *args, **kwargs):
+        if name != backup_module.MANIFEST_NAME:
+            raise AssertionError("payload must be verified through a streaming reader")
+        return real_read(bundle, name, *args, **kwargs)
+
+    monkeypatch.setattr(zipfile.ZipFile, "read", allow_manifest_read_only)
+
+    assert manager.verify(archive).files[0].size == 1_500_000
+
+
 def test_restore_requires_explicit_overwrite(tmp_path):
     source = tmp_path / "source"
     source.mkdir()
