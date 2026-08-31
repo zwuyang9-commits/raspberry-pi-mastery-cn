@@ -110,6 +110,38 @@ def test_bme280_adapter_supports_both_common_addresses(monkeypatch):
     assert bus.closed
 
 
+def test_bme280_releases_i2c_when_device_initialization_fails(monkeypatch):
+    class FakeI2C:
+        def __init__(self):
+            self.closed = False
+
+        def deinit(self):
+            self.closed = True
+
+    bus = FakeI2C()
+    fake_board = ModuleType("board")
+    fake_board.I2C = lambda: bus
+
+    class BrokenDevice:
+        def __init__(self, i2c, *, address):
+            assert i2c is bus
+            assert address == 0x76
+            raise RuntimeError("sensor did not acknowledge")
+
+    fake_basic = ModuleType("adafruit_bme280.basic")
+    fake_basic.Adafruit_BME280_I2C = BrokenDevice
+    fake_package = ModuleType("adafruit_bme280")
+    fake_package.basic = fake_basic
+    monkeypatch.setitem(sys.modules, "board", fake_board)
+    monkeypatch.setitem(sys.modules, "adafruit_bme280", fake_package)
+    monkeypatch.setitem(sys.modules, "adafruit_bme280.basic", fake_basic)
+
+    with pytest.raises(RuntimeError, match="did not acknowledge"):
+        BME280Sensor()
+
+    assert bus.closed
+
+
 def test_make_sensor_rejects_unknown_backend():
     with pytest.raises(ValueError, match="unknown sensor kind"):
         make_sensor("usb-weather-station")

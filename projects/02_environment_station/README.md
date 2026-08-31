@@ -61,6 +61,9 @@ python projects/02_environment_station/main.py \
   --output data/bme280.csv
 ```
 
+如果 BME280 驱动初始化失败，程序会先释放已创建的 I2C 总线再报告原始错误，便于修正接线或地址后
+直接重试，不会因失败构造遗留占用。
+
 ## 断线重试
 
 `--retries` 表示首次失败后最多再试几次，`--retry-delay` 是两次尝试之间的秒数：

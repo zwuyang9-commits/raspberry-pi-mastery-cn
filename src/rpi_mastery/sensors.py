@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import re
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -107,10 +108,17 @@ class BME280Sensor:
             ) from error
 
         self._i2c: Any = board.I2C()
-        self._device: Any = adafruit_bme280.Adafruit_BME280_I2C(
-            self._i2c,
-            address=address,
-        )
+        try:
+            self._device: Any = adafruit_bme280.Adafruit_BME280_I2C(
+                self._i2c,
+                address=address,
+            )
+        except Exception:
+            deinit = getattr(self._i2c, "deinit", None)
+            if deinit is not None:
+                with suppress(Exception):
+                    deinit()
+            raise
 
     def read(self) -> Reading:
         try:
