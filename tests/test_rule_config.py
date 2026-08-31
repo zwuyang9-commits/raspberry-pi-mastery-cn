@@ -87,6 +87,18 @@ def test_rejects_threshold_that_overflows_to_infinity(tmp_path):
         load_rule_engine(path)
 
 
+@pytest.mark.parametrize("version", [True, 1.0])
+def test_rejects_non_integer_config_version(tmp_path, version):
+    path = tmp_path / "rules.json"
+    write_config(path)
+    config = json.loads(path.read_text(encoding="utf-8"))
+    config["version"] = version
+    path.write_text(json.dumps(config), encoding="utf-8")
+
+    with pytest.raises(RuleConfigError, match="unsupported rule config version"):
+        load_rule_engine(path)
+
+
 @pytest.mark.parametrize(
     "change, message",
     [

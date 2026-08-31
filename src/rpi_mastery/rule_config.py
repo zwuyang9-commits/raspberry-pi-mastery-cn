@@ -91,7 +91,7 @@ def load_rule_engine(path: str | Path) -> RuleEngine:
         raise RuleConfigError(f"cannot read rule config: {config_path}") from error
     if not isinstance(raw, dict) or set(raw) != {"version", "rules"}:
         raise RuleConfigError("config must contain only version and rules")
-    if raw["version"] != 1:
+    if type(raw["version"]) is not int or raw["version"] != 1:
         raise RuleConfigError(f"unsupported rule config version: {raw['version']!r}")
     if not isinstance(raw["rules"], list) or not raw["rules"]:
         raise RuleConfigError("rules must be a non-empty list")

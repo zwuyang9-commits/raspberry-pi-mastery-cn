@@ -24,6 +24,7 @@ python main.py --simulate --rules rules.example.json
 `is_true` 和 `is_false` 运算符；字段错误、重复名称或类型不符时拒绝启用。长期运行的程序可使用
 `ReloadableRuleEngine`，重新加载失败时会继续使用上一次验证通过的规则。解析器拒绝重复 JSON 键、
 `NaN`、无穷大和溢出为无穷大的数值阈值，避免配置工具之间产生不同解释。
+配置版本必须是整数 `1`，不会把 JSON 布尔值或浮点值当作等价版本接受。
 
 中枢通过 `evaluate_safely` 隔离单条规则故障：判断条件或动作构建失败时写入 `rule_error` 审计，
 其他规则仍会继续运行。涉及关键安全设备时仍应配置独立硬件联锁，不能只依赖软件容错。
