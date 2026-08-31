@@ -51,6 +51,42 @@ def test_numeric_rule_rejects_boolean_event_value(tmp_path):
     assert load_rule_engine(path).evaluate(Event.now("temperature_c", True, "room")) == []
 
 
+def test_numeric_rule_rejects_non_finite_event_value(tmp_path):
+    path = tmp_path / "rules.json"
+    write_config(path)
+
+    assert load_rule_engine(path).evaluate(Event.now("temperature_c", float("inf"), "room")) == []
+
+
+def test_rejects_duplicate_json_keys(tmp_path):
+    path = tmp_path / "rules.json"
+    write_config(path)
+    content = path.read_text(encoding="utf-8").replace('"version": 1', '"version": 1, "version": 1')
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(RuleConfigError, match="duplicate JSON key: version"):
+        load_rule_engine(path)
+
+
+@pytest.mark.parametrize("threshold", [float("nan"), float("inf")])
+def test_rejects_non_standard_numeric_thresholds(tmp_path, threshold):
+    path = tmp_path / "rules.json"
+    write_config(path, threshold=threshold)
+
+    with pytest.raises(RuleConfigError, match="non-standard JSON number"):
+        load_rule_engine(path)
+
+
+def test_rejects_threshold_that_overflows_to_infinity(tmp_path):
+    path = tmp_path / "rules.json"
+    write_config(path)
+    content = path.read_text(encoding="utf-8").replace('"value": 30', '"value": 1e999', 1)
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(RuleConfigError, match="threshold must be finite"):
+        load_rule_engine(path)
+
+
 @pytest.mark.parametrize(
     "change, message",
     [

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Callable
 from pathlib import Path
 from string import Formatter
@@ -23,6 +24,19 @@ _COMPARISONS: dict[str, Callable[[float, float], bool]] = {
 }
 
 
+def _unique_json_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise RuleConfigError(f"duplicate JSON key: {key}")
+        result[key] = value
+    return result
+
+
+def _reject_json_constant(value: str) -> Any:
+    raise RuleConfigError(f"non-standard JSON number: {value}")
+
+
 def _required_text(raw: dict[str, Any], key: str, rule_name: str) -> str:
     value = raw.get(key)
     if not isinstance(value, str) or not value.strip():
@@ -34,12 +48,15 @@ def _numeric_predicate(operator: str, expected: Any, rule_name: str) -> Callable
     if isinstance(expected, bool) or not isinstance(expected, (int, float)):
         raise RuleConfigError(f"rule {rule_name}: numeric operator requires a number")
     threshold = float(expected)
+    if not math.isfinite(threshold):
+        raise RuleConfigError(f"rule {rule_name}: numeric threshold must be finite")
     comparison = _COMPARISONS[operator]
 
     def matches(event: Event) -> bool:
         if isinstance(event.value, bool) or not isinstance(event.value, (int, float)):
             return False
-        return comparison(float(event.value), threshold)
+        actual = float(event.value)
+        return math.isfinite(actual) and comparison(actual, threshold)
 
     return matches
 
@@ -65,7 +82,11 @@ def load_rule_engine(path: str | Path) -> RuleEngine:
 
     config_path = Path(path)
     try:
-        raw = json.loads(config_path.read_text(encoding="utf-8"))
+        raw = json.loads(
+            config_path.read_text(encoding="utf-8"),
+            object_pairs_hook=_unique_json_object,
+            parse_constant=_reject_json_constant,
+        )
     except (OSError, json.JSONDecodeError) as error:
         raise RuleConfigError(f"cannot read rule config: {config_path}") from error
     if not isinstance(raw, dict) or set(raw) != {"version", "rules"}:
