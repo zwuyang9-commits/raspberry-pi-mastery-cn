@@ -95,6 +95,25 @@ def test_watchdog_pet_refreshes_timeout_without_changing_value():
     assert output.value == 0.4
 
 
+def test_watchdog_returns_to_safe_value_when_timer_cannot_start():
+    class FailingTimer(FakeTimer):
+        def start(self):
+            raise RuntimeError("timer unavailable")
+
+    FailingTimer.created = []
+    underlying = SimulatedDigitalOutput()
+    output = WatchdogOutput(underlying, timeout=5, timer_factory=FailingTimer)
+
+    with pytest.raises(RuntimeError, match="timer unavailable"):
+        output.set(0.75)
+
+    assert output.value == 0.0
+    assert output.triggered is True
+    assert isinstance(output.watchdog_error, RuntimeError)
+    assert FailingTimer.created[-1].cancelled is True
+    assert underlying.history == [0.75, 0.0]
+
+
 def test_watchdog_validates_timeout_and_safe_value():
     with pytest.raises(ValueError, match="timeout"):
         WatchdogOutput(SimulatedDigitalOutput(), timeout=0)

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass, field
 from threading import RLock, Timer
 from typing import Any, Protocol
@@ -90,14 +91,29 @@ class WatchdogOutput:
         generation = self._generation
         if self._timer is not None:
             self._timer.cancel()
-        timer = self._timer_factory(
-            self.timeout,
-            lambda: self._expire(generation),
-        )
-        if hasattr(timer, "daemon"):
-            timer.daemon = True
-        self._timer = timer
-        timer.start()
+        timer: Any | None = None
+        try:
+            timer = self._timer_factory(
+                self.timeout,
+                lambda: self._expire(generation),
+            )
+            if hasattr(timer, "daemon"):
+                timer.daemon = True
+            self._timer = timer
+            timer.start()
+        except Exception as error:
+            if timer is not None:
+                with suppress(Exception):
+                    timer.cancel()
+            self._timer = None
+            try:
+                self._output.set(self.safe_value)
+            except Exception as safe_error:  # noqa: BLE001 - adapters expose driver-specific errors
+                self._watchdog_error = safe_error
+            else:
+                self._triggered = True
+                self._watchdog_error = error
+            raise
 
     def _expire(self, generation: int) -> None:
         with self._lock:
