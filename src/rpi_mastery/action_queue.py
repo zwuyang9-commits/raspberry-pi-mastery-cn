@@ -46,6 +46,16 @@ class DispatchReport:
     leased: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class QueueStatus:
+    pending: int
+    ready: int
+    deferred: int
+    leased: int
+    dead_letters: int
+    next_ready_at: datetime | None
+
+
 class DurableActionQueue:
     """Reconstructs pending work from an append-only audit log after restarts."""
 
@@ -328,6 +338,38 @@ class DurableActionQueue:
                     retained,
                     apply=apply,
                 )
+
+    def status(self, *, now: datetime | None = None) -> QueueStatus:
+        """Return an operational summary without mutating queue state."""
+
+        timestamp = _as_utc(now or datetime.now(timezone.utc))
+        items = self.pending()
+        ready = 0
+        deferred = 0
+        leased = 0
+        availability: list[datetime] = []
+        for item in items:
+            blockers = [
+                value
+                for value in (item.next_attempt_at, item.lease_expires_at)
+                if value is not None and value > timestamp
+            ]
+            if item.lease_expires_at is not None and item.lease_expires_at > timestamp:
+                leased += 1
+            elif item.next_attempt_at is not None and item.next_attempt_at > timestamp:
+                deferred += 1
+            else:
+                ready += 1
+            if blockers:
+                availability.append(max(blockers))
+        return QueueStatus(
+            pending=len(items),
+            ready=ready,
+            deferred=deferred,
+            leased=leased,
+            dead_letters=len(self.dead_letters()),
+            next_ready_at=min(availability) if availability else None,
+        )
 
     def dispatch(
         self,

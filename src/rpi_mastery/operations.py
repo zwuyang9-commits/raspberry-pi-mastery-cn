@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Any
 
-from .action_queue import DurableActionQueue
+from .action_queue import DurableActionQueue, QueueStatus
 from .audit import AuditEntry, AuditLog
 from .automation import Action, Event, RuleEngine
 from .energy import EnergyScheduler, EnergyWindow, FlexibleLoad, ScheduleDecision
@@ -176,6 +176,7 @@ class HubSnapshot:
     recent_actions: tuple[AuditEntry, ...]
     alerts: tuple[Alert, ...]
     health_trends: tuple[HealthTrend, ...]
+    queue_status: QueueStatus | None = None
 
     @property
     def status(self) -> str:
@@ -183,6 +184,8 @@ class HubSnapshot:
         if AlertSeverity.CRITICAL in severities:
             return "critical"
         if AlertSeverity.WARNING in severities:
+            return "warning"
+        if self.queue_status is not None and self.queue_status.dead_letters > 0:
             return "warning"
         return "ok"
 
@@ -246,6 +249,22 @@ class HubSnapshot:
                 }
                 for alert in self.alerts
             ],
+            "queue": (
+                {
+                    "pending": self.queue_status.pending,
+                    "ready": self.queue_status.ready,
+                    "deferred": self.queue_status.deferred,
+                    "leased": self.queue_status.leased,
+                    "dead_letters": self.queue_status.dead_letters,
+                    "next_ready_at": (
+                        self.queue_status.next_ready_at.isoformat()
+                        if self.queue_status.next_ready_at is not None
+                        else None
+                    ),
+                }
+                if self.queue_status is not None
+                else None
+            ),
         }
 
 
@@ -388,6 +407,11 @@ class LocalOperations:
             recent_actions=actions,
             alerts=alerts,
             health_trends=health_trends,
+            queue_status=(
+                self.action_queue.status(now=generated_at)
+                if self.action_queue is not None
+                else None
+            ),
         )
 
     def acknowledge_alert(self, code: str, *, now: datetime | None = None) -> Alert:
@@ -511,6 +535,15 @@ def render_snapshot(snapshot: HubSnapshot) -> str:
             )
     else:
         lines.append("- 无")
+    lines.extend(["", "持久化动作队列"])
+    if snapshot.queue_status is None:
+        lines.append("- 未配置")
+    else:
+        queue = snapshot.queue_status
+        lines.append(
+            f"- 待办 {queue.pending}，可执行 {queue.ready}，退避 {queue.deferred}，"
+            f"租约中 {queue.leased}，死信 {queue.dead_letters}"
+        )
     return "\n".join(lines)
 
 
@@ -596,4 +629,17 @@ def render_prometheus(snapshot: HubSnapshot) -> str:
             f"rpi_recent_actions {len(snapshot.recent_actions)}",
         ]
     )
+    if snapshot.queue_status is not None:
+        queue = snapshot.queue_status
+        lines.extend(
+            [
+                "# HELP rpi_action_queue Queue actions grouped by operational state.",
+                "# TYPE rpi_action_queue gauge",
+                f'rpi_action_queue{{state="pending"}} {queue.pending}',
+                f'rpi_action_queue{{state="ready"}} {queue.ready}',
+                f'rpi_action_queue{{state="deferred"}} {queue.deferred}',
+                f'rpi_action_queue{{state="leased"}} {queue.leased}',
+                f'rpi_action_queue{{state="dead_letter"}} {queue.dead_letters}',
+            ]
+        )
     return "\n".join(lines) + "\n"

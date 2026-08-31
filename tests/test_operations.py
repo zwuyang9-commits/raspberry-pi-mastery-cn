@@ -237,3 +237,29 @@ def test_process_persists_actions_when_durable_queue_is_configured(tmp_path):
     assert pending.action.target == "fan"
     assert pending.action.command == "on"
     assert pending.enqueued_at == NOW
+
+
+def test_snapshot_reports_queue_state_and_dead_letters_raise_warning(tmp_path):
+    audit = AuditLog(tmp_path / "hub.jsonl")
+    queue = DurableActionQueue(AuditLog(tmp_path / "actions.jsonl"))
+    operations = LocalOperations(
+        RuleEngine([]),
+        DeviceHealthMonitor(),
+        audit,
+        action_queue=queue,
+    )
+    queue.enqueue(Action("fan", "set", 1, "test"), action_id="dead", now=NOW)
+    queue.dispatch(
+        lambda item: (_ for _ in ()).throw(RuntimeError("offline")),
+        max_attempts=1,
+        now=NOW,
+    )
+
+    snapshot = operations.snapshot(now=NOW)
+
+    assert snapshot.status == "warning"
+    assert snapshot.queue_status is not None
+    assert snapshot.queue_status.dead_letters == 1
+    assert snapshot.as_dict()["queue"]["dead_letters"] == 1
+    assert "死信 1" in render_snapshot(snapshot)
+    assert 'rpi_action_queue{state="dead_letter"} 1' in render_prometheus(snapshot)

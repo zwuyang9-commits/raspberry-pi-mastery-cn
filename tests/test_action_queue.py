@@ -353,3 +353,47 @@ def test_terminal_archive_preview_does_not_modify_queue(tmp_path):
     assert report.archived_entries == 3
     assert path.read_bytes() == before
     assert not archive.exists()
+
+
+def test_status_summarizes_ready_deferred_leased_and_dead_letters(tmp_path):
+    audit = AuditLog(tmp_path / "queue.jsonl")
+    queue = DurableActionQueue(audit)
+    queue.enqueue(Action("ready", "set", 1, "test"), action_id="ready", now=NOW)
+    queue.enqueue(Action("deferred", "set", 1, "test"), action_id="deferred", now=NOW)
+    queue.dispatch(
+        lambda item: (_ for _ in ()).throw(RuntimeError("offline"))
+        if item.action_id == "deferred"
+        else None,
+        retry_delay=timedelta(seconds=20),
+        max_items=2,
+        now=NOW,
+    )
+    queue.enqueue(Action("leased", "set", 1, "test"), action_id="leased", now=NOW)
+    audit.append(
+        "queued_action_attempted",
+        "leased",
+        {
+            "action_id": "leased",
+            "lease_expires_at": (NOW + timedelta(seconds=10)).isoformat(),
+        },
+        timestamp=NOW,
+    )
+    queue.enqueue(Action("dead", "set", 1, "test"), action_id="dead", now=NOW)
+    queue.enqueue(Action("ready", "set", 1, "test"), action_id="ready-2", now=NOW)
+    queue.dispatch(
+        lambda item: (_ for _ in ()).throw(RuntimeError("offline"))
+        if item.action_id == "dead"
+        else None,
+        max_attempts=1,
+        max_items=3,
+        now=NOW,
+    )
+
+    status = queue.status(now=NOW)
+
+    assert status.pending == 3
+    assert status.ready == 1
+    assert status.deferred == 1
+    assert status.leased == 1
+    assert status.dead_letters == 1
+    assert status.next_ready_at == NOW + timedelta(seconds=10)
