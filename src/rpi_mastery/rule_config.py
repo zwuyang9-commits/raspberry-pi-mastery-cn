@@ -47,7 +47,12 @@ def _required_text(raw: dict[str, Any], key: str, rule_name: str) -> str:
 def _numeric_predicate(operator: str, expected: Any, rule_name: str) -> Callable[[Event], bool]:
     if isinstance(expected, bool) or not isinstance(expected, (int, float)):
         raise RuleConfigError(f"rule {rule_name}: numeric operator requires a number")
-    threshold = float(expected)
+    try:
+        threshold = float(expected)
+    except OverflowError as error:
+        raise RuleConfigError(
+            f"rule {rule_name}: numeric threshold must be finite"
+        ) from error
     if not math.isfinite(threshold):
         raise RuleConfigError(f"rule {rule_name}: numeric threshold must be finite")
     comparison = _COMPARISONS[operator]

@@ -87,6 +87,20 @@ def test_rejects_threshold_that_overflows_to_infinity(tmp_path):
         load_rule_engine(path)
 
 
+def test_rejects_integer_threshold_too_large_for_runtime_comparison(tmp_path):
+    path = tmp_path / "rules.json"
+    write_config(path)
+    content = path.read_text(encoding="utf-8").replace(
+        '"value": 30',
+        '"value": 1' + "0" * 400,
+        1,
+    )
+    path.write_text(content, encoding="utf-8")
+
+    with pytest.raises(RuleConfigError, match="threshold must be finite"):
+        load_rule_engine(path)
+
+
 @pytest.mark.parametrize("version", [True, 1.0])
 def test_rejects_non_integer_config_version(tmp_path, version):
     path = tmp_path / "rules.json"
