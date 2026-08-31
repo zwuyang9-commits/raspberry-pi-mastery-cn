@@ -177,3 +177,60 @@ def test_dispatch_rejects_negative_retry_delay(tmp_path):
     queue = DurableActionQueue(AuditLog(tmp_path / "queue.jsonl"))
     with pytest.raises(ValueError, match="retry_delay"):
         queue.dispatch(lambda item: None, retry_delay=timedelta(seconds=-1))
+
+
+def test_active_lease_defers_action_after_worker_crash(tmp_path):
+    audit = AuditLog(tmp_path / "queue.jsonl")
+    queue = DurableActionQueue(audit)
+    queue.enqueue(Action("fan", "set", 1, "test"), action_id="leased", now=NOW)
+    audit.append(
+        "queued_action_attempted",
+        "fan",
+        {
+            "action_id": "leased",
+            "lease_expires_at": (NOW + timedelta(seconds=30)).isoformat(),
+        },
+        timestamp=NOW,
+    )
+
+    handled = []
+    report = DurableActionQueue(audit).dispatch(
+        handled.append,
+        now=NOW + timedelta(seconds=29),
+    )
+
+    assert handled == []
+    assert report.leased == ("leased",)
+    assert report.processed == 0
+
+
+def test_expired_lease_is_recovered_after_worker_crash(tmp_path):
+    audit = AuditLog(tmp_path / "queue.jsonl")
+    queue = DurableActionQueue(audit)
+    queue.enqueue(Action("fan", "set", 1, "test"), action_id="recover", now=NOW)
+    audit.append(
+        "queued_action_attempted",
+        "fan",
+        {
+            "action_id": "recover",
+            "lease_expires_at": (NOW + timedelta(seconds=30)).isoformat(),
+        },
+        timestamp=NOW,
+    )
+
+    handled = []
+    report = DurableActionQueue(audit).dispatch(
+        handled.append,
+        lease_duration=timedelta(seconds=30),
+        now=NOW + timedelta(seconds=30),
+    )
+
+    assert [item.action_id for item in handled] == ["recover"]
+    assert report.completed == ("recover",)
+    assert queue.pending() == ()
+
+
+def test_dispatch_rejects_non_positive_lease_duration(tmp_path):
+    queue = DurableActionQueue(AuditLog(tmp_path / "queue.jsonl"))
+    with pytest.raises(ValueError, match="lease_duration"):
+        queue.dispatch(lambda item: None, lease_duration=timedelta(0))

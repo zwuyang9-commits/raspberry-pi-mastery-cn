@@ -31,6 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--max-items", type=int)
     run.add_argument("--max-attempts", type=int, default=3)
     run.add_argument("--retry-delay", type=float, default=0, help="首次重试等待秒数")
+    run.add_argument("--lease-seconds", type=float, default=30, help="执行租约秒数")
     requeue = commands.add_parser("requeue", help="用新 ID 重新加入死信动作")
     requeue.add_argument("action_id")
     requeue.add_argument("--new-id")
@@ -67,6 +68,9 @@ def main() -> None:
                         "next_attempt_at": (
                             item.next_attempt_at.isoformat() if item.next_attempt_at else None
                         ),
+                        "lease_expires_at": (
+                            item.lease_expires_at.isoformat() if item.lease_expires_at else None
+                        ),
                     },
                     ensure_ascii=False,
                 )
@@ -88,6 +92,7 @@ def main() -> None:
         max_items=args.max_items,
         max_attempts=args.max_attempts,
         retry_delay=timedelta(seconds=args.retry_delay),
+        lease_duration=timedelta(seconds=args.lease_seconds),
     )
     print(json.dumps(report.__dict__, ensure_ascii=False))
 

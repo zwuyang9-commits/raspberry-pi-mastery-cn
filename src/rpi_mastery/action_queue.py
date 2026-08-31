@@ -26,6 +26,7 @@ class QueuedAction:
     attempts: int = 0
     last_error: str | None = None
     next_attempt_at: datetime | None = None
+    lease_expires_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -35,6 +36,7 @@ class DispatchReport:
     failed: tuple[str, ...]
     dead_lettered: tuple[str, ...] = ()
     deferred: tuple[str, ...] = ()
+    leased: tuple[str, ...] = ()
 
 
 class DurableActionQueue:
@@ -102,12 +104,25 @@ class DurableActionQueue:
                     order.append(identifier)
                 elif entry.kind == "queued_action_attempted" and identifier in active:
                     item = active[identifier]
+                    raw_lease_expiry = entry.payload.get("lease_expires_at")
+                    try:
+                        lease_expires_at = (
+                            datetime.fromisoformat(raw_lease_expiry)
+                            if isinstance(raw_lease_expiry, str)
+                            else entry.timestamp
+                        )
+                    except ValueError as error:
+                        raise ActionQueueError(f"invalid lease expiry: {identifier}") from error
+                    if lease_expires_at.tzinfo is None:
+                        raise ActionQueueError(f"lease expiry has no timezone: {identifier}")
                     active[identifier] = QueuedAction(
                         item.action_id,
                         item.action,
                         item.enqueued_at,
                         attempts=item.attempts + 1,
                         last_error=item.last_error,
+                        next_attempt_at=item.next_attempt_at,
+                        lease_expires_at=lease_expires_at,
                     )
                 elif entry.kind == "queued_action_failed" and identifier in active:
                     item = active[identifier]
@@ -131,6 +146,7 @@ class DurableActionQueue:
                         attempts=item.attempts,
                         last_error=str(entry.payload.get("error", "unknown error")),
                         next_attempt_at=next_attempt_at,
+                        lease_expires_at=None,
                     )
                 elif entry.kind in {"queued_action_completed", "queued_action_dead_lettered"}:
                     active.pop(identifier, None)
@@ -160,12 +176,23 @@ class DurableActionQueue:
                     known[identifier] = QueuedAction(identifier, action, entry.timestamp)
                 elif entry.kind == "queued_action_attempted" and identifier in known:
                     item = known[identifier]
+                    raw_lease_expiry = entry.payload.get("lease_expires_at")
+                    try:
+                        lease_expires_at = (
+                            datetime.fromisoformat(raw_lease_expiry)
+                            if isinstance(raw_lease_expiry, str)
+                            else entry.timestamp
+                        )
+                    except ValueError as error:
+                        raise ActionQueueError(f"invalid lease expiry: {identifier}") from error
                     known[identifier] = QueuedAction(
                         item.action_id,
                         item.action,
                         item.enqueued_at,
                         attempts=item.attempts + 1,
                         last_error=item.last_error,
+                        next_attempt_at=item.next_attempt_at,
+                        lease_expires_at=lease_expires_at,
                     )
                 elif entry.kind == "queued_action_failed" and identifier in known:
                     item = known[identifier]
@@ -187,6 +214,7 @@ class DurableActionQueue:
                         attempts=item.attempts,
                         last_error=str(entry.payload.get("error", "unknown error")),
                         next_attempt_at=next_attempt_at,
+                        lease_expires_at=None,
                     )
                 elif entry.kind == "queued_action_dead_lettered" and identifier in known:
                     dead[identifier] = known[identifier]
@@ -216,6 +244,7 @@ class DurableActionQueue:
         max_items: int | None = None,
         max_attempts: int = 3,
         retry_delay: timedelta = timedelta(0),
+        lease_duration: timedelta = timedelta(seconds=30),
         now: datetime | None = None,
     ) -> DispatchReport:
         if max_items is not None and max_items < 1:
@@ -224,16 +253,22 @@ class DurableActionQueue:
             raise ValueError("max_attempts must be positive")
         if retry_delay < timedelta(0):
             raise ValueError("retry_delay must not be negative")
+        if lease_duration <= timedelta(0):
+            raise ValueError("lease_duration must be positive")
         timestamp = now or datetime.now(timezone.utc)
         completed: list[str] = []
         failed: list[str] = []
         dead_lettered: list[str] = []
         deferred: list[str] = []
+        leased: list[str] = []
         with self._lock:
             items = self.pending()
             if max_items is not None:
                 items = items[:max_items]
             for item in items:
+                if item.lease_expires_at is not None and timestamp < item.lease_expires_at:
+                    leased.append(item.action_id)
+                    continue
                 if item.next_attempt_at is not None and timestamp < item.next_attempt_at:
                     deferred.append(item.action_id)
                     continue
@@ -241,7 +276,10 @@ class DurableActionQueue:
                 self.audit.append(
                     "queued_action_attempted",
                     item.action.target,
-                    payload,
+                    {
+                        **payload,
+                        "lease_expires_at": (timestamp + lease_duration).isoformat(),
+                    },
                     timestamp=timestamp,
                 )
                 try:
@@ -283,6 +321,7 @@ class DurableActionQueue:
             tuple(failed),
             tuple(dead_lettered),
             tuple(deferred),
+            tuple(leased),
         )
 
     def _known_ids(self) -> set[str]:
