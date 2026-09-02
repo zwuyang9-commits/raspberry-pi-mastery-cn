@@ -26,8 +26,10 @@ def build_parser() -> argparse.ArgumentParser:
     enqueue.add_argument("--id", dest="action_id")
     enqueue.add_argument("--not-before", help="最早执行时间，必须是带时区的 ISO 8601 时间")
 
-    commands.add_parser("list", help="列出待执行动作")
-    commands.add_parser("list-dead", help="列出达到重试上限的死信动作")
+    for name, description in (("list", "列出待执行动作"), ("list-dead", "列出死信动作")):
+        listing = commands.add_parser(name, help=description)
+        listing.add_argument("--target", help="精确匹配设备名称（区分大小写）")
+        listing.add_argument("--limit", type=int, help="最多显示的匹配条数，必须为正整数")
     status = commands.add_parser("status", help="只读输出队列状态 JSON")
     status.add_argument(
         "--fail-on-dead", action="store_true", help="存在死信时输出状态并以退出码 1 结束"
@@ -103,7 +105,13 @@ def _run() -> None:
         return
 
     if args.command in {"list", "list-dead"}:
+        if args.limit is not None and args.limit < 1:
+            raise ValueError("limit must be a positive integer")
         items = queue.pending() if args.command == "list" else queue.dead_letters()
+        if args.target is not None:
+            items = tuple(item for item in items if item.action.target == args.target)
+        if args.limit is not None:
+            items = items[:args.limit]
         for item in items:
             print(
                 json.dumps(

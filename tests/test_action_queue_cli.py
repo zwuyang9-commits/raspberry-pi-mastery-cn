@@ -31,6 +31,41 @@ def json_lines(output):
     return [json.loads(line) for line in output.splitlines() if line.strip()]
 
 
+@pytest.mark.parametrize("command", ["list", "list-dead"])
+def test_cli_list_filters_before_limit_without_mutation(tmp_path, command):
+    path = tmp_path / "queue.jsonl"
+    queue = DurableActionQueue(AuditLog(path))
+    for index, target in enumerate(("pump", "fan", "Fan", "fan", "风扇")):
+        queue.enqueue(Action(target, "set", 1, "test"), action_id=f"a{index}")
+    if command == "list-dead":
+        queue.dispatch(lambda item: (_ for _ in ()).throw(RuntimeError("offline")),
+                       max_attempts=1)
+    before = {file.name: file.read_bytes() for file in tmp_path.iterdir()}
+    assert len(json_lines(run_cli(path, command).stdout)) == 5
+    assert [item["action_id"] for item in json_lines(
+        run_cli(path, command, "--target", "fan", "--limit", "1").stdout
+    )] == ["a1"]
+    assert [item["action_id"] for item in json_lines(
+        run_cli(path, command, "--target", "fan").stdout
+    )] == ["a1", "a3"]
+    assert json_lines(run_cli(path, command, "--target", "风扇").stdout)[0]["action_id"] == "a4"
+    assert len(json_lines(run_cli(path, command, "--limit", "2").stdout)) == 2
+    assert run_cli(path, command, "--target", "missing").stdout == ""
+    assert {file.name: file.read_bytes() for file in tmp_path.iterdir()} == before
+
+
+@pytest.mark.parametrize("command", ["list", "list-dead"])
+@pytest.mark.parametrize("limit", ["0", "-1", "1.5"])
+def test_cli_list_invalid_limit_creates_no_files(tmp_path, command, limit):
+    path = tmp_path / "missing" / "queue.jsonl"
+    with pytest.raises(subprocess.CalledProcessError) as result:
+        run_cli(path, command, "--limit", limit)
+    assert result.value.stdout == ""
+    assert "limit" in result.value.stderr
+    assert "Traceback" not in result.value.stderr
+    assert not path.parent.exists()
+
+
 def test_cli_requeue_supports_scheduled_recovery(tmp_path):
     path = tmp_path / "queue.jsonl"
     run_cli(path, "enqueue", "fan", "set", "1", "--id", "old")

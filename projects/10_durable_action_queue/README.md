@@ -1,5 +1,16 @@
 # 10 持久化动作队列
 
+`list` 与 `list-dead` 支持按设备精确筛选并限制显示条数：
+
+```bash
+python projects/10_durable_action_queue/main.py list --target fan --limit 10
+python projects/10_durable_action_queue/main.py list-dead --target fan --limit 10
+```
+
+先筛选再取前 N 条，保持原有顺序；设备名区分大小写，不做模糊匹配。
+不指定参数时显示全部，无匹配时输出为空且成功退出。查询不会更改队列或重试死信。
+条数限制只约束输出，不减少重建队列状态所需的日志读取量。
+
 `enqueue` 的 JSON 值拒绝同一对象中的重复字段（包括嵌套对象与转义后相同的键），
 不会按“最后一个值覆盖前面值”的方式静默入队。不同对象可以使用相同字段名。
 NaN、Infinity 和溢出为无穷大的数值同样被拒绝；验证失败时不写入动作。
