@@ -23,6 +23,7 @@ def build_parser() -> argparse.ArgumentParser:
     enqueue.add_argument("value", help="JSON 值，例如 true、0.5 或字符串")
     enqueue.add_argument("--reason", default="手动加入队列")
     enqueue.add_argument("--id", dest="action_id")
+    enqueue.add_argument("--not-before", help="最早执行时间，必须是带时区的 ISO 8601 时间")
 
     commands.add_parser("list", help="列出待执行动作")
     commands.add_parser("list-dead", help="列出达到重试上限的死信动作")
@@ -53,9 +54,18 @@ def main() -> None:
             value = json.loads(args.value)
         except json.JSONDecodeError as error:
             raise SystemExit(f"value 必须是有效 JSON：{error.msg}") from error
+        not_before = None
+        if args.not_before is not None:
+            try:
+                not_before = datetime.fromisoformat(args.not_before)
+                if not_before.tzinfo is None:
+                    raise ValueError("missing timezone")
+            except ValueError as error:
+                raise SystemExit("not-before 必须是带时区的 ISO 8601 时间") from error
         queued = queue.enqueue(
             Action(args.target, args.action_command, value, args.reason),
             action_id=args.action_id,
+            not_before=not_before,
         )
         print(json.dumps({"action_id": queued.action_id, "status": "pending"}, ensure_ascii=False))
         return

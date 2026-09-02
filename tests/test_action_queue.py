@@ -11,6 +11,65 @@ from rpi_mastery.automation import Action
 NOW = datetime(2026, 8, 30, 9, 0, tzinfo=timezone.utc)
 
 
+def test_scheduled_action_survives_restart_and_runs_at_boundary(tmp_path):
+    audit = AuditLog(tmp_path / "queue.jsonl")
+    queue = DurableActionQueue(audit)
+    scheduled = NOW + timedelta(hours=1)
+    item = queue.enqueue(
+        Action("fan", "set", 1, "scheduled"), action_id="scheduled", now=NOW,
+        not_before=scheduled.astimezone(timezone(timedelta(hours=8))),
+    )
+    assert item.next_attempt_at == scheduled
+    restored = DurableActionQueue(audit)
+    assert restored.pending() == (item,)
+    status = restored.status(now=NOW)
+    assert (status.ready, status.deferred, status.next_ready_at) == (0, 1, scheduled)
+    assert restored.dispatch(lambda item: pytest.fail("too early"), now=NOW).processed == 0
+    assert restored.dispatch(lambda item: None, now=scheduled).completed == ("scheduled",)
+
+
+def test_waiting_action_does_not_consume_dispatch_limit(tmp_path):
+    queue = DurableActionQueue(AuditLog(tmp_path / "queue.jsonl"))
+    queue.enqueue(Action("fan", "set", 1, "later"), action_id="later", now=NOW,
+                  not_before=NOW + timedelta(hours=1))
+    queue.enqueue(Action("fan", "set", 0, "ready"), action_id="ready", now=NOW)
+    report = queue.dispatch(lambda item: None, now=NOW, max_items=1)
+    assert report.completed == ("ready",)
+    assert report.deferred == ("later",)
+    assert report.processed == 1
+
+
+def test_scheduling_requires_timezone_without_writing(tmp_path):
+    audit = AuditLog(tmp_path / "queue.jsonl")
+    with pytest.raises(ActionQueueError, match="timezone"):
+        DurableActionQueue(audit).enqueue(
+            Action("fan", "set", 1, "test"), not_before=NOW.replace(tzinfo=None)
+        )
+    assert audit.read() == []
+
+
+@pytest.mark.parametrize("raw", [None, 42, "bad", "2026-09-02T12:00:00"])
+def test_malformed_persisted_schedule_is_rejected(tmp_path, raw):
+    audit = AuditLog(tmp_path / "queue.jsonl")
+    audit.append("queued_action_created", "fan", {
+        "action_id": "bad", "command": "set", "value": 1, "reason": "test",
+        "not_before": raw,
+    }, timestamp=NOW)
+    queue = DurableActionQueue(audit)
+    for read in (queue.pending, queue.dead_letters):
+        with pytest.raises(ActionQueueError, match="not_before"):
+            read()
+
+
+def test_scheduled_failure_uses_retry_backoff(tmp_path):
+    audit = AuditLog(tmp_path / "queue.jsonl")
+    queue = DurableActionQueue(audit)
+    queue.enqueue(Action("fan", "set", 1, "test"), now=NOW, not_before=NOW)
+    queue.dispatch(lambda item: (_ for _ in ()).throw(RuntimeError("offline")),
+                   now=NOW, retry_delay=timedelta(seconds=10))
+    assert DurableActionQueue(audit).pending()[0].next_attempt_at == NOW + timedelta(seconds=10)
+
+
 def _dispatch_in_process(path, start, results):
     queue = DurableActionQueue(AuditLog(path))
     start.wait()
@@ -404,7 +463,7 @@ def test_status_summarizes_ready_deferred_leased_and_dead_letters(tmp_path):
         if item.action_id == "dead"
         else None,
         max_attempts=1,
-        max_items=3,
+        max_items=1,
         now=NOW,
     )
 

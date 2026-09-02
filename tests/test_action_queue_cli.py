@@ -24,6 +24,28 @@ def json_lines(output):
     return [json.loads(line) for line in output.splitlines() if line.strip()]
 
 
+def test_cli_schedule_is_persisted_and_deferred(tmp_path):
+    queue = tmp_path / "queue.jsonl"
+    run_cli(queue, "enqueue", "fan", "set", "1", "--id", "scheduled",
+            "--not-before", "2999-01-01T08:00:00+08:00")
+    [item] = json_lines(run_cli(queue, "list").stdout)
+    assert item["next_attempt_at"] == "2999-01-01T00:00:00+00:00"
+    [report] = json_lines(run_cli(queue, "run-demo").stdout)
+    assert report["processed"] == 0
+    assert report["deferred"] == ["scheduled"]
+
+
+def test_cli_rejects_schedule_without_timezone(tmp_path):
+    queue = tmp_path / "queue.jsonl"
+    try:
+        run_cli(queue, "enqueue", "fan", "set", "1", "--not-before", "2026-09-02T12:00:00")
+    except subprocess.CalledProcessError as error:
+        assert "not-before" in error.stderr
+        assert not queue.exists()
+    else:
+        raise AssertionError("invalid schedule accepted")
+
+
 def test_cli_enqueue_list_and_cancel_lifecycle(tmp_path):
     queue = tmp_path / "queue.jsonl"
 

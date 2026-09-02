@@ -10,6 +10,18 @@ python projects/10_durable_action_queue/main.py list
 python projects/10_durable_action_queue/main.py run-demo
 ```
 
+也可以先定时入队，计划时间必须包含时区：
+
+```bash
+python projects/10_durable_action_queue/main.py enqueue fan set 1 --id evening-fan --not-before 2026-09-03T23:00:00+08:00
+```
+
+库接口为 `enqueue(action, not_before=带时区的datetime)`。计划时间规范化为 UTC 并写入日志，
+重启后继续生效；`list` 的 `next_attempt_at` 和状态摘要的 `deferred` 展示等待状态。
+这是“最早可执行时间”，不是后台定时器：仍需定期调用 `dispatch` 或 `run-demo` 才会执行。
+过去的计划时间立即可执行，失败后按重试退避重新计算时间。`max_items` 只计算实际尝试的动作，
+等待计划时间或租约的动作不会挡住后面的可执行动作。
+
 模拟单个设备失败：
 
 ```bash

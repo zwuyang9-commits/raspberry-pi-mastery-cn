@@ -70,7 +70,12 @@ class DurableActionQueue:
         *,
         action_id: str | None = None,
         now: datetime | None = None,
+        not_before: datetime | None = None,
     ) -> QueuedAction:
+        if not_before is not None:
+            if not_before.tzinfo is None or not_before.utcoffset() is None:
+                raise ActionQueueError("not_before must include a timezone")
+            not_before = _as_utc(not_before)
         identifier = action_id or uuid4().hex
         if re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", identifier) is None:
             raise ActionQueueError("action_id has an invalid format")
@@ -91,10 +96,11 @@ class DurableActionQueue:
                     "command": action.command,
                     "value": action.value,
                     "reason": action.reason,
+                    **({"not_before": not_before.isoformat()} if not_before else {}),
                 },
                 timestamp=timestamp,
             )
-            return QueuedAction(identifier, action, entry.timestamp)
+            return QueuedAction(identifier, action, entry.timestamp, next_attempt_at=not_before)
 
     def pending(self) -> tuple[QueuedAction, ...]:
         with self._lock:
@@ -118,7 +124,10 @@ class DurableActionQueue:
                         )
                     except KeyError as error:
                         raise ActionQueueError(f"invalid queued action: {identifier}") from error
-                    active[identifier] = QueuedAction(identifier, action, entry.timestamp)
+                    active[identifier] = QueuedAction(
+                        identifier, action, entry.timestamp,
+                        next_attempt_at=_scheduled_time(entry),
+                    )
                     order.append(identifier)
                 elif entry.kind == "queued_action_attempted" and identifier in active:
                     item = active[identifier]
@@ -195,7 +204,10 @@ class DurableActionQueue:
                         )
                     except KeyError as error:
                         raise ActionQueueError(f"invalid queued action: {identifier}") from error
-                    known[identifier] = QueuedAction(identifier, action, entry.timestamp)
+                    known[identifier] = QueuedAction(
+                        identifier, action, entry.timestamp,
+                        next_attempt_at=_scheduled_time(entry),
+                    )
                 elif entry.kind == "queued_action_attempted" and identifier in known:
                     item = known[identifier]
                     raw_lease_expiry = entry.payload.get("lease_expires_at")
@@ -397,9 +409,9 @@ class DurableActionQueue:
         leased: list[str] = []
         with self._lock, _exclusive_file_lock(self._lock_path):
             items = self.pending()
-            if max_items is not None:
-                items = items[:max_items]
             for item in items:
+                if max_items is not None and len(completed) + len(failed) >= max_items:
+                    break
                 if item.lease_expires_at is not None and timestamp < item.lease_expires_at:
                     leased.append(item.action_id)
                     continue
@@ -467,3 +479,20 @@ class DurableActionQueue:
             if isinstance(identifier, str):
                 identifiers.add(identifier)
         return identifiers
+
+
+def _scheduled_time(entry: AuditEntry) -> datetime | None:
+    """Read optional scheduling metadata; old records remain immediately ready."""
+
+    if "not_before" not in entry.payload:
+        return None
+    raw = entry.payload["not_before"]
+    try:
+        if not isinstance(raw, str):
+            raise TypeError("expected ISO timestamp")
+        value = datetime.fromisoformat(raw)
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("expected timezone")
+        return _as_utc(value)
+    except (TypeError, ValueError) as error:
+        raise ActionQueueError("invalid not_before in queue record") from error
