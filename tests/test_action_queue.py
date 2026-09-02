@@ -11,6 +11,44 @@ from rpi_mastery.automation import Action
 NOW = datetime(2026, 8, 30, 9, 0, tzinfo=timezone.utc)
 
 
+@pytest.mark.parametrize("broken_return", [False, True])
+def test_unprintable_device_error_does_not_block_following_action(tmp_path, broken_return):
+    class UnprintableError(Exception):
+        def __str__(self):
+            if broken_return:
+                return None  # noqa: RET501, PLE0307 - deliberately broken adapter exception
+            raise RuntimeError("formatting failed")
+
+    audit = AuditLog(tmp_path / "queue.jsonl")
+    queue = DurableActionQueue(audit)
+    queue.enqueue(Action("broken", "set", 1, "test"), action_id="broken", now=NOW)
+    queue.enqueue(Action("healthy", "set", 1, "test"), action_id="healthy", now=NOW)
+
+    def handler(item):
+        if item.action_id == "broken":
+            raise UnprintableError()
+
+    report = queue.dispatch(handler, max_attempts=1, now=NOW)
+    assert report.failed == report.dead_lettered == ("broken",)
+    assert report.completed == ("healthy",)
+    [entry] = audit.read(kind="queued_action_failed")
+    assert entry.payload["error_type"] == "UnprintableError"
+    assert entry.payload["error"] == "UnprintableError (message unavailable)"
+    assert DurableActionQueue(audit).dead_letters()[0].last_error == entry.payload["error"]
+
+
+@pytest.mark.parametrize(("message", "expected"), [
+    ("offline\r\nretry\rsoon\u2028later", "offline retry soon later"),
+    ("x" * 300, "x" * 200),
+    ("", "RuntimeError"),
+])
+def test_device_error_summary_is_bounded_and_single_line(tmp_path, message, expected):
+    queue = DurableActionQueue(AuditLog(tmp_path / "queue.jsonl"))
+    queue.enqueue(Action("fan", "set", 1, "test"), now=NOW)
+    queue.dispatch(lambda item: (_ for _ in ()).throw(RuntimeError(message)), now=NOW)
+    assert queue.pending()[0].last_error == expected
+
+
 @pytest.mark.parametrize("identifier", ["", False, 0, 1, b"valid", [], {}, "a" * 129])
 def test_explicit_invalid_id_is_rejected_without_creating_files(tmp_path, identifier):
     queue = DurableActionQueue(AuditLog(tmp_path / "queue.jsonl"))

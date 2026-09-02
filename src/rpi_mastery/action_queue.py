@@ -436,7 +436,7 @@ class DurableActionQueue:
                 try:
                     handler(item)
                 except Exception as error:  # noqa: BLE001 - device adapters vary
-                    message = str(error).replace("\n", " ")[:200]
+                    message = _error_summary(error)
                     next_attempt_at = timestamp + retry_delay * (2**item.attempts)
                     self.audit.append(
                         "queued_action_failed",
@@ -484,6 +484,16 @@ class DurableActionQueue:
             if isinstance(identifier, str):
                 identifiers.add(identifier)
         return identifiers
+
+
+def _error_summary(error: Exception) -> str:
+    """Keep adapter formatting failures from interrupting queue error handling."""
+
+    try:
+        message = str(error)
+    except Exception:  # noqa: BLE001 - third-party exception formatters can fail
+        message = f"{type(error).__name__} (message unavailable)"
+    return (" ".join(message.splitlines()).strip() or type(error).__name__)[:200]
 
 
 def _scheduled_time(entry: AuditEntry) -> datetime | None:
