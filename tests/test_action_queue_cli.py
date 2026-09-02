@@ -77,7 +77,39 @@ def test_cli_status_corrupt_queue_fails_without_claiming_healthy(tmp_path):
     with pytest.raises(subprocess.CalledProcessError) as result:
         run_cli(path, "status")
     assert result.value.stdout == ""
+    assert "队列操作失败" in result.value.stderr
+    assert "Traceback" not in result.value.stderr
     assert path.read_bytes() == before
+
+
+@pytest.mark.parametrize("arguments", [
+    ("run-demo", "--max-attempts", "0"),
+    ("run-demo", "--retry-delay", "nan"),
+    ("run-demo", "--lease-seconds", "inf"),
+    ("enqueue", "fan", "set", "1", "--id", "bad/id"),
+])
+def test_cli_invalid_input_has_concise_error_without_writes(tmp_path, arguments):
+    path = tmp_path / "queue.jsonl"
+    with pytest.raises(subprocess.CalledProcessError) as result:
+        run_cli(path, *arguments)
+    assert result.value.returncode == 1
+    assert result.value.stdout == ""
+    assert "队列操作失败" in result.value.stderr
+    assert "Traceback" not in result.value.stderr
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_cli_storage_failure_has_concise_error(tmp_path):
+    path = tmp_path / "not-a-file"
+    path.mkdir()
+    with pytest.raises(subprocess.CalledProcessError) as result:
+        run_cli(path, "status")
+    assert result.value.returncode == 1
+    assert result.value.stdout == ""
+    assert "队列操作失败" in result.value.stderr
+    assert "Traceback" not in result.value.stderr
+    assert path.is_dir()
+    assert list(path.iterdir()) == []
 
 
 def test_cli_schedule_is_persisted_and_deferred(tmp_path):

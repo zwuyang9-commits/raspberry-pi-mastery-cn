@@ -51,7 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main() -> None:
+def _run() -> None:
     args = build_parser().parse_args()
     queue = DurableActionQueue(AuditLog(args.queue))
     if args.command == "status":
@@ -143,6 +143,16 @@ def main() -> None:
         lease_duration=timedelta(seconds=args.lease_seconds),
     )
     print(json.dumps(report.__dict__, ensure_ascii=False))
+
+
+def main() -> None:
+    """Report expected input/storage failures without a Python traceback."""
+
+    try:
+        _run()
+    except (ValueError, OSError, OverflowError) as error:
+        message = " ".join(str(error).splitlines())
+        raise SystemExit(f"队列操作失败：{message}") from None
 
 
 if __name__ == "__main__":
