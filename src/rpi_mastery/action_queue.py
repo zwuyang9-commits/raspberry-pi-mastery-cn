@@ -261,6 +261,7 @@ class DurableActionQueue:
         *,
         new_action_id: str | None = None,
         now: datetime | None = None,
+        not_before: datetime | None = None,
     ) -> QueuedAction:
         with self._lock:
             item = next(
@@ -269,7 +270,9 @@ class DurableActionQueue:
             )
             if item is None:
                 raise ActionQueueError(f"dead letter not found: {action_id}")
-            return self.enqueue(item.action, action_id=new_action_id, now=now)
+            return self.enqueue(
+                item.action, action_id=new_action_id, now=now, not_before=not_before
+            )
 
     def cancel(
         self,

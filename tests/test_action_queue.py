@@ -11,6 +11,38 @@ from rpi_mastery.automation import Action
 NOW = datetime(2026, 8, 30, 9, 0, tzinfo=timezone.utc)
 
 
+def test_dead_letter_scheduled_recovery_survives_restart(tmp_path):
+    audit = AuditLog(tmp_path / "queue.jsonl")
+    queue = DurableActionQueue(audit)
+    queue.enqueue(Action("fan", "set", 1, "test"), action_id="old", now=NOW)
+    queue.dispatch(lambda item: (_ for _ in ()).throw(RuntimeError("offline")),
+                   max_attempts=1, now=NOW)
+    dead = queue.dead_letters()
+    future = NOW + timedelta(hours=1)
+    recovered = queue.requeue_dead_letter("old", new_action_id="recovery",
+                                         now=NOW, not_before=future)
+    restarted = DurableActionQueue(audit)
+    assert restarted.pending() == (recovered,)
+    assert recovered.attempts == 0
+    assert recovered.last_error is None
+    assert restarted.dead_letters() == dead
+    assert restarted.dispatch(lambda item: pytest.fail("early"), now=NOW).processed == 0
+    assert restarted.dispatch(lambda item: None, now=future).completed == ("recovery",)
+
+
+def test_invalid_requeue_schedule_preserves_dead_letter(tmp_path):
+    audit = AuditLog(tmp_path / "queue.jsonl")
+    queue = DurableActionQueue(audit)
+    queue.enqueue(Action("fan", "set", 1, "test"), action_id="old", now=NOW)
+    queue.dispatch(lambda item: (_ for _ in ()).throw(RuntimeError("offline")),
+                   max_attempts=1, now=NOW)
+    before = audit.path.read_bytes()
+    with pytest.raises(ActionQueueError, match="timezone"):
+        queue.requeue_dead_letter("old", not_before=NOW.replace(tzinfo=None))
+    assert audit.path.read_bytes() == before
+    assert queue.pending() == ()
+
+
 @pytest.mark.parametrize("parameter", ["max_items", "max_attempts"])
 @pytest.mark.parametrize("value", [True, False, 1.0, 1.5, float("nan"), float("inf"), "2", 0, -1])
 def test_dispatch_rejects_invalid_counts_before_any_side_effect(tmp_path, parameter, value):

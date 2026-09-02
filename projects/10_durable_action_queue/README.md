@@ -60,6 +60,16 @@ python projects/10_durable_action_queue/main.py list-dead
 python projects/10_durable_action_queue/main.py requeue fan-command-001 --new-id fan-command-002
 ```
 
+维修窗口后的恢复也可以延后执行：
+
+```bash
+python projects/10_durable_action_queue/main.py requeue fan-command-001 --new-id fan-recovery --not-before 2026-09-03T08:00:00+08:00
+```
+
+对应库接口为 `requeue_dead_letter(action_id, not_before=带时区的datetime)`。
+恢复动作从零次尝试开始，原死信记录不变，重启后仍保留计划时间；不指定时间时保持立即可执行。
+此命令只入队，仍需运行调度器才会执行。
+
 误加入的待办可以带原因取消，取消记录会保留在审计日志中：
 
 ```bash

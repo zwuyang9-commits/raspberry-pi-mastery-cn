@@ -31,6 +31,27 @@ def json_lines(output):
     return [json.loads(line) for line in output.splitlines() if line.strip()]
 
 
+def test_cli_requeue_supports_scheduled_recovery(tmp_path):
+    path = tmp_path / "queue.jsonl"
+    run_cli(path, "enqueue", "fan", "set", "1", "--id", "old")
+    run_cli(path, "run-demo", "--fail-target", "fan", "--max-attempts", "1")
+    before = path.read_bytes()
+    for invalid in ("bad", "2999-01-01T00:00:00"):
+        with pytest.raises(subprocess.CalledProcessError) as result:
+            run_cli(path, "requeue", "old", "--not-before", invalid)
+        assert "not-before" in result.value.stderr
+        assert path.read_bytes() == before
+    run_cli(path, "requeue", "old", "--new-id", "new",
+            "--not-before", "2999-01-01T08:00:00+08:00")
+    [pending] = json_lines(run_cli(path, "list").stdout)
+    assert pending["action_id"] == "new"
+    assert pending["next_attempt_at"] == "2999-01-01T00:00:00+00:00"
+    [report] = json_lines(run_cli(path, "run-demo").stdout)
+    assert report["deferred"] == ["new"]
+    assert report["processed"] == 0
+    assert json_lines(run_cli(path, "list-dead").stdout)[0]["action_id"] == "old"
+
+
 @pytest.mark.parametrize("value", [
     '{"enabled": false, "enabled": true}',
     '{"device": {"speed": 0, "speed": 1}}',

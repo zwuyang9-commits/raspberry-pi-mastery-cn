@@ -41,6 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     requeue = commands.add_parser("requeue", help="用新 ID 重新加入死信动作")
     requeue.add_argument("action_id")
     requeue.add_argument("--new-id")
+    requeue.add_argument("--not-before", help="恢复动作的最早执行时间，必须包含时区")
     cancel = commands.add_parser("cancel", help="取消一个待执行动作")
     cancel.add_argument("action_id")
     cancel.add_argument("--reason", required=True)
@@ -62,6 +63,18 @@ def _unique_value_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return result
 
 
+def _parse_not_before(raw: str | None) -> datetime | None:
+    if raw is None:
+        return None
+    try:
+        value = datetime.fromisoformat(raw)
+        if value.tzinfo is None:
+            raise ValueError("missing timezone")
+        return value
+    except ValueError as error:
+        raise SystemExit("not-before 必须是带时区的 ISO 8601 时间") from error
+
+
 def _run() -> None:
     args = build_parser().parse_args()
     queue = DurableActionQueue(AuditLog(args.queue))
@@ -80,14 +93,7 @@ def _run() -> None:
             value = json.loads(args.value, object_pairs_hook=_unique_value_pairs)
         except json.JSONDecodeError as error:
             raise SystemExit(f"value 必须是有效 JSON：{error.msg}") from error
-        not_before = None
-        if args.not_before is not None:
-            try:
-                not_before = datetime.fromisoformat(args.not_before)
-                if not_before.tzinfo is None:
-                    raise ValueError("missing timezone")
-            except ValueError as error:
-                raise SystemExit("not-before 必须是带时区的 ISO 8601 时间") from error
+        not_before = _parse_not_before(args.not_before)
         queued = queue.enqueue(
             Action(args.target, args.action_command, value, args.reason),
             action_id=args.action_id,
@@ -121,7 +127,10 @@ def _run() -> None:
         return
 
     if args.command == "requeue":
-        item = queue.requeue_dead_letter(args.action_id, new_action_id=args.new_id)
+        item = queue.requeue_dead_letter(
+            args.action_id, new_action_id=args.new_id,
+            not_before=_parse_not_before(args.not_before),
+        )
         print(json.dumps({"action_id": item.action_id, "status": "pending"}, ensure_ascii=False))
         return
 
