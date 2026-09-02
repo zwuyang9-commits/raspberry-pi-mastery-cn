@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from dataclasses import asdict
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -27,6 +28,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     commands.add_parser("list", help="列出待执行动作")
     commands.add_parser("list-dead", help="列出达到重试上限的死信动作")
+    status = commands.add_parser("status", help="只读输出队列状态 JSON")
+    status.add_argument(
+        "--fail-on-dead", action="store_true", help="存在死信时输出状态并以退出码 1 结束"
+    )
     run = commands.add_parser("run-demo", help="用模拟处理器执行待处理动作")
     run.add_argument("--fail-target", help="模拟指定目标执行失败")
     run.add_argument("--max-items", type=int)
@@ -49,6 +54,16 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
     queue = DurableActionQueue(AuditLog(args.queue))
+    if args.command == "status":
+        status = queue.status()
+        print(json.dumps({
+            **asdict(status),
+            "next_ready_at": status.next_ready_at.isoformat() if status.next_ready_at else None,
+        }))
+        if args.fail_on_dead and status.dead_letters:
+            raise SystemExit(1)
+        return
+
     if args.command == "enqueue":
         try:
             value = json.loads(args.value)

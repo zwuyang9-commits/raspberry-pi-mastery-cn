@@ -2,7 +2,14 @@ import json
 import os
 import subprocess
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+import pytest
+
+from rpi_mastery.action_queue import DurableActionQueue
+from rpi_mastery.audit import AuditLog
+from rpi_mastery.automation import Action
 
 SCRIPT = Path("projects/10_durable_action_queue/main.py")
 
@@ -22,6 +29,55 @@ def run_cli(queue, *arguments):
 
 def json_lines(output):
     return [json.loads(line) for line in output.splitlines() if line.strip()]
+
+
+def test_cli_status_empty_queue_creates_no_files(tmp_path):
+    path = tmp_path / "missing" / "queue.jsonl"
+    [status] = json_lines(run_cli(path, "status", "--fail-on-dead").stdout)
+    assert status == {
+        "pending": 0, "ready": 0, "deferred": 0, "leased": 0,
+        "dead_letters": 0, "next_ready_at": None,
+    }
+    assert not path.parent.exists()
+
+
+def test_cli_status_reports_actual_queue_without_modifying_files(tmp_path):
+    path = tmp_path / "queue.jsonl"
+    audit = AuditLog(path)
+    queue = DurableActionQueue(audit)
+    now = datetime.now(timezone.utc)
+    future = datetime(2999, 1, 1, tzinfo=timezone.utc)
+    queue.enqueue(Action("fan", "set", 1, "dead"), action_id="dead", now=now)
+    queue.dispatch(lambda item: (_ for _ in ()).throw(RuntimeError("offline")),
+                   max_attempts=1, now=now)
+    queue.enqueue(Action("fan", "set", 1, "ready"), action_id="ready", now=now)
+    queue.enqueue(Action("fan", "set", 1, "scheduled"), action_id="scheduled",
+                  now=now, not_before=future)
+    queue.enqueue(Action("fan", "set", 1, "leased"), action_id="leased", now=now)
+    audit.append("queued_action_attempted", "fan", {
+        "action_id": "leased", "lease_expires_at": (future + timedelta(days=1)).isoformat(),
+    }, timestamp=now)
+    before = {file.name: file.read_bytes() for file in tmp_path.iterdir()}
+    [status] = json_lines(run_cli(path, "status").stdout)
+    assert status == {
+        "pending": 3, "ready": 1, "deferred": 1, "leased": 1,
+        "dead_letters": 1, "next_ready_at": future.isoformat(),
+    }
+    with pytest.raises(subprocess.CalledProcessError) as result:
+        run_cli(path, "status", "--fail-on-dead")
+    assert result.value.returncode == 1
+    assert json_lines(result.value.stdout) == [status]
+    assert {file.name: file.read_bytes() for file in tmp_path.iterdir()} == before
+
+
+def test_cli_status_corrupt_queue_fails_without_claiming_healthy(tmp_path):
+    path = tmp_path / "queue.jsonl"
+    path.write_text("not-json\n", encoding="utf-8")
+    before = path.read_bytes()
+    with pytest.raises(subprocess.CalledProcessError) as result:
+        run_cli(path, "status")
+    assert result.value.stdout == ""
+    assert path.read_bytes() == before
 
 
 def test_cli_schedule_is_persisted_and_deferred(tmp_path):

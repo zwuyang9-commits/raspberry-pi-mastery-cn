@@ -10,6 +10,19 @@ python projects/10_durable_action_queue/main.py list
 python projects/10_durable_action_queue/main.py run-demo
 ```
 
+使用只读状态命令检查实际队列，输出一行 JSON，可直接用于监控脚本：
+
+```bash
+python projects/10_durable_action_queue/main.py --queue data/action-queue.jsonl status
+python projects/10_durable_action_queue/main.py --queue data/action-queue.jsonl status --fail-on-dead
+```
+
+字段包括 `pending`、`ready`、`deferred`、`leased`、`dead_letters` 和 `next_ready_at`。
+最后一项是等待中的动作下次可执行的最早 UTC 时间；没有等待动作时为 `null`，
+即使已有立即可执行的动作，也可能同时存在未来的 `next_ready_at`。
+默认成功读取时退出码为 0；加 `--fail-on-dead` 后，存在死信时仍输出 JSON，但退出码为 1。
+损坏日志读取失败，不输出伪造的健康状态。查询不会创建不存在的队列，也不会执行、取消或重试动作。
+
 也可以先定时入队，计划时间必须包含时区：
 
 ```bash
