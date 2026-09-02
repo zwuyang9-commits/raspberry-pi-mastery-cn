@@ -11,6 +11,26 @@ from rpi_mastery.automation import Action
 NOW = datetime(2026, 8, 30, 9, 0, tzinfo=timezone.utc)
 
 
+@pytest.mark.parametrize("parameter", ["max_items", "max_attempts"])
+@pytest.mark.parametrize("value", [True, False, 1.0, 1.5, float("nan"), float("inf"), "2", 0, -1])
+def test_dispatch_rejects_invalid_counts_before_any_side_effect(tmp_path, parameter, value):
+    path = tmp_path / "queue.jsonl"
+    queue = DurableActionQueue(AuditLog(path))
+    queue.enqueue(Action("fan", "set", 1, "test"), now=NOW)
+    before = {file.name: file.read_bytes() for file in tmp_path.iterdir()}
+    with pytest.raises(ValueError, match=parameter):
+        queue.dispatch(lambda item: pytest.fail("invalid config executed an action"),
+                       now=NOW, **{parameter: value})
+    assert {file.name: file.read_bytes() for file in tmp_path.iterdir()} == before
+
+
+def test_dispatch_rejects_none_attempt_limit_without_creating_files(tmp_path):
+    queue = DurableActionQueue(AuditLog(tmp_path / "missing" / "queue.jsonl"))
+    with pytest.raises(ValueError, match="max_attempts"):
+        queue.dispatch(lambda item: None, max_attempts=None)
+    assert not (tmp_path / "missing").exists()
+
+
 def test_scheduled_action_survives_restart_and_runs_at_boundary(tmp_path):
     audit = AuditLog(tmp_path / "queue.jsonl")
     queue = DurableActionQueue(audit)

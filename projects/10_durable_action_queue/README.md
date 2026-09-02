@@ -43,6 +43,10 @@ python projects/10_durable_action_queue/main.py run-demo --fail-target fan --ret
 
 失败动作默认最多尝试 3 次，达到上限后进入死信区，不再占用正常队列：
 
+库接口的 `max_attempts` 必须是正整数，`max_items` 必须是正整数或 `None`（不限制）。
+布尔值、小数、字符串和非有限数值会在任何动作执行或日志写入前被拒绝，避免错误配置
+绕过处理数量和重试上限；有效整数及 CLI 用法保持不变。
+
 ```bash
 python projects/10_durable_action_queue/main.py list-dead
 python projects/10_durable_action_queue/main.py requeue fan-command-001 --new-id fan-command-002

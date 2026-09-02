@@ -393,10 +393,10 @@ class DurableActionQueue:
         lease_duration: timedelta = timedelta(seconds=30),
         now: datetime | None = None,
     ) -> DispatchReport:
-        if max_items is not None and max_items < 1:
-            raise ValueError("max_items must be positive")
-        if max_attempts < 1:
-            raise ValueError("max_attempts must be positive")
+        if max_items is not None and (type(max_items) is not int or max_items < 1):
+            raise ValueError("max_items must be a positive integer or None")
+        if type(max_attempts) is not int or max_attempts < 1:
+            raise ValueError("max_attempts must be a positive integer")
         if retry_delay < timedelta(0):
             raise ValueError("retry_delay must not be negative")
         if lease_duration <= timedelta(0):
