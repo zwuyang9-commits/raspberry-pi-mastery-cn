@@ -51,6 +51,17 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _unique_value_pairs(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    """Reject ambiguous action values before duplicate keys are overwritten."""
+
+    result: dict[str, object] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("value contains duplicate JSON keys")
+        result[key] = value
+    return result
+
+
 def _run() -> None:
     args = build_parser().parse_args()
     queue = DurableActionQueue(AuditLog(args.queue))
@@ -66,7 +77,7 @@ def _run() -> None:
 
     if args.command == "enqueue":
         try:
-            value = json.loads(args.value)
+            value = json.loads(args.value, object_pairs_hook=_unique_value_pairs)
         except json.JSONDecodeError as error:
             raise SystemExit(f"value 必须是有效 JSON：{error.msg}") from error
         not_before = None

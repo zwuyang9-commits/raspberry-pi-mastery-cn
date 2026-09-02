@@ -31,6 +31,43 @@ def json_lines(output):
     return [json.loads(line) for line in output.splitlines() if line.strip()]
 
 
+@pytest.mark.parametrize("value", [
+    '{"enabled": false, "enabled": true}',
+    '{"device": {"speed": 0, "speed": 1}}',
+    '[{"speed": 0, "speed": 1}]',
+    r'{"a": 1, "\u0061": 2}',
+])
+def test_cli_duplicate_json_keys_are_rejected_without_mutation(tmp_path, value):
+    path = tmp_path / "queue.jsonl"
+    run_cli(path, "enqueue", "fan", "set", "0", "--id", "existing")
+    before = {file.name: file.read_bytes() for file in tmp_path.iterdir()}
+    with pytest.raises(subprocess.CalledProcessError) as result:
+        run_cli(path, "enqueue", "fan", "set", value)
+    assert result.value.returncode == 1
+    assert result.value.stdout == ""
+    assert "duplicate JSON keys" in result.value.stderr
+    assert "Traceback" not in result.value.stderr
+    assert {file.name: file.read_bytes() for file in tmp_path.iterdir()} == before
+
+
+@pytest.mark.parametrize("value", ['NaN', 'Infinity', '[1e999]', '{"speed": -Infinity}'])
+def test_cli_non_finite_json_value_creates_no_queue(tmp_path, value):
+    path = tmp_path / "queue.jsonl"
+    with pytest.raises(subprocess.CalledProcessError) as result:
+        run_cli(path, "enqueue", "fan", "set", value)
+    assert result.value.stdout == ""
+    assert "Traceback" not in result.value.stderr
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_cli_same_key_in_separate_objects_is_valid(tmp_path):
+    path = tmp_path / "queue.jsonl"
+    value = '[{"speed": 0}, {"speed": 1}, {"name": "风扇"}]'
+    run_cli(path, "enqueue", "fan", "set", value)
+    [item] = json_lines(run_cli(path, "list").stdout)
+    assert item["value"] == json.loads(value)
+
+
 def test_cli_status_empty_queue_creates_no_files(tmp_path):
     path = tmp_path / "missing" / "queue.jsonl"
     [status] = json_lines(run_cli(path, "status", "--fail-on-dead").stdout)
