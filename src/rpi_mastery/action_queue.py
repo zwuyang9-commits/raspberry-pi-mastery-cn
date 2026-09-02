@@ -76,8 +76,10 @@ class DurableActionQueue:
             if not_before.tzinfo is None or not_before.utcoffset() is None:
                 raise ActionQueueError("not_before must include a timezone")
             not_before = _as_utc(not_before)
-        identifier = action_id or uuid4().hex
-        if re.fullmatch(r"[A-Za-z0-9._:-]{1,128}", identifier) is None:
+        identifier = uuid4().hex if action_id is None else action_id
+        if not isinstance(identifier, str) or re.fullmatch(
+            r"[A-Za-z0-9._:-]{1,128}", identifier
+        ) is None:
             raise ActionQueueError("action_id has an invalid format")
         try:
             json.dumps(action.value, ensure_ascii=False, allow_nan=False)

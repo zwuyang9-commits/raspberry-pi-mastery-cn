@@ -11,6 +11,39 @@ from rpi_mastery.automation import Action
 NOW = datetime(2026, 8, 30, 9, 0, tzinfo=timezone.utc)
 
 
+@pytest.mark.parametrize("identifier", ["", False, 0, 1, b"valid", [], {}, "a" * 129])
+def test_explicit_invalid_id_is_rejected_without_creating_files(tmp_path, identifier):
+    queue = DurableActionQueue(AuditLog(tmp_path / "queue.jsonl"))
+    with pytest.raises(ActionQueueError, match="action_id"):
+        queue.enqueue(Action("fan", "set", 1, "test"), action_id=identifier, now=NOW)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_omitted_ids_are_unique_and_max_length_id_is_preserved(tmp_path):
+    queue = DurableActionQueue(AuditLog(tmp_path / "queue.jsonl"))
+    action = Action("fan", "set", 1, "test")
+    first = queue.enqueue(action, now=NOW)
+    second = queue.enqueue(action, now=NOW)
+    explicit = queue.enqueue(action, action_id="a" * 128, now=NOW)
+    assert first.action_id != second.action_id
+    assert len(first.action_id) == len(second.action_id) == 32
+    assert explicit.action_id == "a" * 128
+
+
+def test_empty_recovery_id_does_not_append_or_replace_dead_letter(tmp_path):
+    audit = AuditLog(tmp_path / "queue.jsonl")
+    queue = DurableActionQueue(audit)
+    queue.enqueue(Action("fan", "set", 1, "test"), action_id="old", now=NOW)
+    queue.dispatch(lambda item: (_ for _ in ()).throw(RuntimeError("offline")),
+                   max_attempts=1, now=NOW)
+    before = audit.path.read_bytes()
+    with pytest.raises(ActionQueueError, match="action_id"):
+        queue.requeue_dead_letter("old", new_action_id="", now=NOW)
+    assert audit.path.read_bytes() == before
+    assert queue.pending() == ()
+    assert queue.dead_letters()[0].action_id == "old"
+
+
 def test_dead_letter_scheduled_recovery_survives_restart(tmp_path):
     audit = AuditLog(tmp_path / "queue.jsonl")
     queue = DurableActionQueue(audit)
