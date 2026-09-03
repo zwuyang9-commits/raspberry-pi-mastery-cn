@@ -1,5 +1,17 @@
 # 树莓派实机回归验证
 
+## 选择演示与实时日志增量验证（2026-09-03）
+
+- 已验证代码：`209d3671b84dc2850276fe1a1083c8257ed116bc`；Pi 5 / Debian 13 /
+  aarch64 / Python 3.13.5，在隔离目录应用同一代码后运行。
+- 树莓派 329 passed、1 条既有第三方弃用警告，22.14 秒，库覆盖率 90.21%；
+  Windows 327 passed、2 skipped，库覆盖率 90.13%（不包含 scripts 目录）。
+- pip check、Ruff、部署预检、API 配置与本机 API 启停检查通过。
+- 桌面终端运行 `--step environment-simulated --step audit-summary`，实际计划为模拟环境采样、
+  operations、audit-summary，三步均退出 0，摘要 complete/ok 均为 true。
+- 自动测试覆盖运行中日志可见、UTF-8 输出、选择去重与依赖、中断未完成状态和只读列举。
+  此轮不采集摄像头、不驱动真实 GPIO；前台演示不是传感器实物验证。
+
 ## 安全演示运行器增量验证（2026-09-03）
 
 - 已验证代码：`610dd529c1ed45eaa831afd802f2a8ebe2f94532`，Pi 5 / Debian 13 /
