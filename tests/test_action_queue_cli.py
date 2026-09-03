@@ -14,6 +14,56 @@ from rpi_mastery.automation import Action
 SCRIPT = Path("projects/10_durable_action_queue/main.py")
 
 
+def test_run_demo_json_success_and_default_output(tmp_path):
+    path = tmp_path / "queue.jsonl"
+    run_cli(path, "enqueue", "fan", "set", "true", "--id", "json-success")
+    result = run_cli(path, "run-demo", "--json", "--fail-on-error")
+    assert len(result.stdout.splitlines()) == 1
+    report = json.loads(result.stdout)
+    assert report["processed"] == 1
+    assert report["completed"] == ["json-success"]
+    assert report["failed"] == []
+    run_cli(path, "enqueue", "fan", "set", "false", "--id", "legacy")
+    assert "执行 legacy:" in run_cli(path, "run-demo").stdout
+
+
+@pytest.mark.parametrize("strict", [False, True])
+def test_run_demo_json_failure_reports_all_actions(tmp_path, strict):
+    path = tmp_path / "queue.jsonl"
+    run_cli(path, "enqueue", "fan", "set", "true", "--id", "bad")
+    run_cli(path, "enqueue", "light", "set", "true", "--id", "good")
+    args = ["run-demo", "--json", "--fail-target", "fan", "--max-attempts", "1"]
+    if strict:
+        with pytest.raises(subprocess.CalledProcessError) as error:
+            run_cli(path, *args, "--fail-on-error")
+        result = error.value
+        assert result.returncode == 1
+    else:
+        result = run_cli(path, *args)
+    assert result.stderr == ""
+    assert len(result.stdout.splitlines()) == 1
+    report = json.loads(result.stdout)
+    assert report["processed"] == 2
+    assert report["failed"] == ["bad"]
+    assert report["completed"] == ["good"]
+    assert report["dead_lettered"] == ["bad"]
+    assert json.loads(run_cli(path, "status").stdout)["pending"] == 0
+    # A historical dead letter is not a failure of the next empty run.
+    empty = json.loads(run_cli(path, "run-demo", "--json", "--fail-on-error").stdout)
+    assert empty["processed"] == 0
+
+
+def test_run_demo_strict_preserves_retryable_failure(tmp_path):
+    path = tmp_path / "queue.jsonl"
+    run_cli(path, "enqueue", "fan", "set", "true", "--id", "retry")
+    with pytest.raises(subprocess.CalledProcessError) as error:
+        run_cli(path, "run-demo", "--json", "--fail-target", "fan", "--fail-on-error")
+    report = json.loads(error.value.stdout)
+    assert report["failed"] == ["retry"]
+    assert report["dead_lettered"] == []
+    assert json.loads(run_cli(path, "status").stdout)["pending"] == 1
+
+
 def run_cli(queue, *arguments):
     environment = os.environ.copy()
     environment["PYTHONIOENCODING"] = "utf-8"

@@ -35,6 +35,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--fail-on-dead", action="store_true", help="存在死信时输出状态并以退出码 1 结束"
     )
     run = commands.add_parser("run-demo", help="用模拟处理器执行待处理动作")
+    run.add_argument("--json", action="store_true", help="仅输出一行 JSON 执行报告")
+    run.add_argument("--fail-on-error", action="store_true", help="本次有执行失败时以退出码 1 结束")
     run.add_argument("--fail-target", help="模拟指定目标执行失败")
     run.add_argument("--max-items", type=int)
     run.add_argument("--max-attempts", type=int, default=3)
@@ -161,7 +163,8 @@ def _run() -> None:
     def simulate(item: QueuedAction) -> None:
         if item.action.target == args.fail_target:
             raise RuntimeError("模拟设备离线")
-        print(f"执行 {item.action_id}: {item.action.target} {item.action.command}")
+        if not args.json:
+            print(f"执行 {item.action_id}: {item.action.target} {item.action.command}")
 
     report = queue.dispatch(
         simulate,
@@ -171,6 +174,8 @@ def _run() -> None:
         lease_duration=timedelta(seconds=args.lease_seconds),
     )
     print(json.dumps(report.__dict__, ensure_ascii=False))
+    if args.fail_on_error and report.failed:
+        raise SystemExit(1)
 
 
 def main() -> None:
