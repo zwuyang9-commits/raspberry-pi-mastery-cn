@@ -15,11 +15,34 @@ python scripts/list_usb_cameras.py
 没有 sysfs（例如 Windows）时返回 `sysfs_available: false` 和空列表；设备目录存在但无 USB
 视频节点时返回空列表。读取权限不足、扫描时设备被拔出或编号数据损坏会返回非零退出码，
 不会静默报告成功。库接口为 `rpi_mastery.cameras.list_usb_video_nodes()`。
-这个功能仅用于发现设备，视觉示例仍使用模拟检测器。
+这个命令仅用于发现设备；真实检测需要显式指定下面的 `--camera` 参数。
 
-演示隐私优先的视觉架构：摄像头帧默认不上传，检测器只输出事件与置信度；只有规则允许时
-才保存必要证据。事件需要连续多帧达到阈值，并按标签设置冷却时间，避免抖动和重复告警。
-`main.py` 使用可复现的模拟检测器，便于替换为 OpenCV 或 TensorFlow Lite。
+## 离线 USB 摄像头人物检测
+
+在树莓派的项目虚拟环境中安装可选依赖，然后执行有限帧检测：
+
+```bash
+python -m pip install '.[vision]'
+timeout 60s python projects/04_edge_vision_sentinel/main.py \
+  --camera /dev/video0 --frames 10 --interval 0.2 --threshold 0.5
+```
+
+使用 OpenCV 自带 HOG 行人模型，不需要云端 API 或额外下载模型。只接受本地
+`/dev/videoN`，每次限制 1–300 帧，结束或异常时释放摄像头。驱动读取可能阻塞，
+因此使用外层 `timeout` 限制实际运行时间；超时不代表成功。
+图像只在内存中处理，不保存、不上传、不做人脸身份识别。默认仍是模拟模式。
+
+真实模式输出 `mode: camera-hog`。事件中的 `confidence` 是 SVM 分数的 sigmoid
+映射，**不是概率或准确率**，并以 `score_kind` 明确标记。最后一行给出处理帧数和
+检测数，以及 `frames_saved: 0`、`frames_uploaded: 0`。无事件可能表示没有人物，
+也可能是漏检或未达到连续帧阈值，不能据此断定无人。
+
+该模型主要用于完整直立人体；遮挡、坐姿、暗光和视角变化会影响结果，不能用于安全保障。
+新增真实检测链路尚待本次树莓派实机验证，下面的历史测试记录不代表它已通过。
+
+演示隐私优先的视觉架构：不保存或上传摄像头帧，检测器只输出事件与分数。
+事件需要连续多帧达到阈值，并按标签设置冷却时间，避免抖动和重复告警。
+`main.py` 默认使用可复现的模拟检测器。
 
 ```bash
 python projects/04_edge_vision_sentinel/main.py --frames 20 --threshold 0.8 \
