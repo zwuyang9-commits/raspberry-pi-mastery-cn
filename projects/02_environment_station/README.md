@@ -93,3 +93,5 @@ python projects/02_environment_station/main.py \
 ```
 
 变化限制从第二个有效读数开始计算。应根据采样间隔和真实环境设定，不要照搬示例数值。
+> 已经过树莓派 5 软件测试（2026-09-03，代码版本 `36b7614`）。模拟采集、CSV 追加和传感器逻辑测试通过；未验证真实 DHT22/BME280。
+> 详见[实机验证范围与记录](../../docs/real-device-validation.md)。

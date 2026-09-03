@@ -118,3 +118,5 @@ python projects/10_durable_action_queue/main.py archive-terminal 2026-09-01T00:0
 
 重新入队必须使用新 ID，避免下游把它误判为已经处理过的旧命令。演示处理器不控制真实硬件；接 GPIO、MQTT 或 HTTP
 设备时，要把动作 ID 传到下游，并让设备拒绝重复执行已经完成的 ID。
+> 已经过树莓派 5 软件测试（2026-09-03，代码版本 `36b7614`）。队列测试与跨进程死信恢复 CLI 通过；处理器为模拟实现。
+> 详见[实机验证范围与记录](../../docs/real-device-validation.md)。

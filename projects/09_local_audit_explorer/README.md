@@ -31,3 +31,5 @@ python projects/09_local_audit_explorer/main.py data/operations.jsonl \
 
 确认数量后增加 `--apply`。工具会先验证全部源记录，完整写好独立归档和保留记录临时文件，再
 替换源日志；已有归档文件不会被覆盖。归档期间不要同时启动写入服务。
+> 已经过树莓派 5 软件测试（2026-09-03，代码版本 `36b7614`）。审计测试与只读查询 CLI 通过；未做超大日志长期压力测试。
+> 详见[实机验证范围与记录](../../docs/real-device-validation.md)。

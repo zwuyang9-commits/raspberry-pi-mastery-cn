@@ -15,3 +15,5 @@ python projects/04_edge_vision_sentinel/main.py --frames 20 --threshold 0.8 \
 小数悄悄当成帧数。真实摄像头接入时，把模型输出转换成 `Detection` 即可，过滤逻辑不依赖具体
 视觉框架。超过冷却期的标签状态会自动清理，`rate_limited_labels` 可用于观察当前保留的限流记录，
 避免动态标签在长期运行中无限累积。
+> 已经过树莓派 5 软件测试（2026-09-03，代码版本 `36b7614`）。视觉过滤测试与模拟 CLI 通过；USB 采集独立通过，尚未接入识别模型。
+> 详见[实机验证范围与记录](../../docs/real-device-validation.md)。

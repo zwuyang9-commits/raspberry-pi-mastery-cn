@@ -30,3 +30,5 @@ python main.py --simulate --rules rules.example.json
 
 中枢通过 `evaluate_safely` 隔离单条规则故障：判断条件或动作构建失败时写入 `rule_error` 审计，
 其他规则仍会继续运行。涉及关键安全设备时仍应配置独立硬件联锁，不能只依赖软件容错。
+> 已经过树莓派 5 软件测试（2026-09-03，代码版本 `36b7614`）。规则、心跳与模拟中枢 CLI 通过；未驱动真实阀门或风扇。
+> 详见[实机验证范围与记录](../../docs/real-device-validation.md)。
