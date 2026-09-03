@@ -50,7 +50,8 @@ python scripts/run_safe_demos.py
 ```
 
 按顺序运行模拟呼吸灯、模拟环境采样、本地规则、能源计划、运行控制台和审计摘要。
-终端立即显示当前阶段，每个阶段结束后显示该阶段输出。默认把数据保存到独立临时目录，
+终端立即显示当前阶段，并实时显示输出，同时保存原始日志（子进程启用无缓冲输出）。
+默认把数据保存到独立临时目录，
 目录路径会打印出来；每一步有单独日志，`summary.json` 包含完成状态、退出码和耗时。
 使用 `--output /path/to/new-directory` 指定**不存在的新目录**，绝不覆盖已有目录。
 每一步默认超时 30 秒，可用 `--timeout` 指定不超过 300 秒的正数。
@@ -60,6 +61,17 @@ python scripts/run_safe_demos.py
 所有演示使用模拟硬件，不开摄像头、不驱动 GPIO、不启动网络服务。
 这些演示不替代完整 pytest 回归，也不证明实际传感器、执行器或相机识别效果。
 在树莓派桌面终端执行同一命令即可前台展示，结束后可直接查看日志。
+
+可以只运行需要的演示，减少重复等待：
+
+```bash
+python scripts/run_safe_demos.py --list
+python scripts/run_safe_demos.py --step energy-plan --step audit-summary
+```
+
+`--list` 只列出名称，不运行、不创建目录。`--step` 可重复指定，自动去重并按固定顺序执行；
+选择 `audit-summary` 会先运行 `operations` 生成本轮独立审计输入。
+摘要中的 `planned_steps` 记录实际计划，开始第一步前即写入未完成状态，避免中断被误认为成功。
 
 ### 安装与单项目运行
 
