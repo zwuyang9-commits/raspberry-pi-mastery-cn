@@ -30,6 +30,9 @@ def build_parser() -> argparse.ArgumentParser:
         listing = commands.add_parser(name, help=description)
         listing.add_argument("--target", help="精确匹配设备名称（区分大小写）")
         listing.add_argument("--limit", type=int, help="最多显示的匹配条数，必须为正整数")
+        listing.add_argument(
+            "--json", action="store_true", help="输出完整 JSON 数组（空结果为 []）"
+        )
     status = commands.add_parser("status", help="只读输出队列状态 JSON")
     status.add_argument(
         "--fail-on-dead", action="store_true", help="存在死信时输出状态并以退出码 1 结束"
@@ -84,10 +87,16 @@ def _run() -> None:
     queue = DurableActionQueue(AuditLog(args.queue))
     if args.command == "status":
         status = queue.status()
-        print(json.dumps({
-            **asdict(status),
-            "next_ready_at": status.next_ready_at.isoformat() if status.next_ready_at else None,
-        }))
+        print(
+            json.dumps(
+                {
+                    **asdict(status),
+                    "next_ready_at": status.next_ready_at.isoformat()
+                    if status.next_ready_at
+                    else None,
+                }
+            )
+        )
         if args.fail_on_dead and status.dead_letters:
             raise SystemExit(1)
         return
@@ -113,32 +122,35 @@ def _run() -> None:
         if args.target is not None:
             items = tuple(item for item in items if item.action.target == args.target)
         if args.limit is not None:
-            items = items[:args.limit]
-        for item in items:
-            print(
-                json.dumps(
-                    {
-                        "action_id": item.action_id,
-                        "target": item.action.target,
-                        "command": item.action.command,
-                        "value": item.action.value,
-                        "attempts": item.attempts,
-                        "last_error": item.last_error,
-                        "next_attempt_at": (
-                            item.next_attempt_at.isoformat() if item.next_attempt_at else None
-                        ),
-                        "lease_expires_at": (
-                            item.lease_expires_at.isoformat() if item.lease_expires_at else None
-                        ),
-                    },
-                    ensure_ascii=False,
-                )
-            )
+            items = items[: args.limit]
+        records = [
+            {
+                "action_id": item.action_id,
+                "target": item.action.target,
+                "command": item.action.command,
+                "value": item.action.value,
+                "attempts": item.attempts,
+                "last_error": item.last_error,
+                "next_attempt_at": (
+                    item.next_attempt_at.isoformat() if item.next_attempt_at else None
+                ),
+                "lease_expires_at": (
+                    item.lease_expires_at.isoformat() if item.lease_expires_at else None
+                ),
+            }
+            for item in items
+        ]
+        if args.json:
+            print(json.dumps(records, ensure_ascii=False))
+        else:
+            for record in records:
+                print(json.dumps(record, ensure_ascii=False))
         return
 
     if args.command == "requeue":
         item = queue.requeue_dead_letter(
-            args.action_id, new_action_id=args.new_id,
+            args.action_id,
+            new_action_id=args.new_id,
             not_before=_parse_not_before(args.not_before),
         )
         print(json.dumps({"action_id": item.action_id, "status": "pending"}, ensure_ascii=False))
@@ -157,7 +169,11 @@ def _run() -> None:
         if cutoff.tzinfo is None:
             raise SystemExit("cutoff 必须包含时区")
         report = queue.archive_terminal_before(cutoff, args.archive, apply=args.apply)
-        print(json.dumps({**report.__dict__, "source": str(report.source), "archive": str(report.archive)}))
+        print(
+            json.dumps(
+                {**report.__dict__, "source": str(report.source), "archive": str(report.archive)}
+            )
+        )
         return
 
     def simulate(item: QueuedAction) -> None:

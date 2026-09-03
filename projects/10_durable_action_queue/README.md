@@ -1,5 +1,17 @@
 # 10 持久化动作队列
 
+## JSON 数组查询
+
+```bash
+python projects/10_durable_action_queue/main.py list --json --target fan --limit 10
+python projects/10_durable_action_queue/main.py list-dead --json
+```
+
+`--json` 将查询结果输出为一行完整 JSON 数组，空结果为 `[]`，可直接交给 JSON 解析器。
+字段与默认逐行 JSON 相同，支持中文及嵌套值，先按设备筛选再限制数量，顺序不变。
+查询只读，不创建不存在的队列、不执行动作、不恢复死信；损坏日志仍以非零退出码报告，
+不会伪装成空数组。省略 `--json` 时保留原有逐行输出和空结果不输出内容的行为。
+
 ## 供脚本读取执行结果
 
 ```bash

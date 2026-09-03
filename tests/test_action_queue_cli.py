@@ -14,6 +14,43 @@ from rpi_mastery.automation import Action
 SCRIPT = Path("projects/10_durable_action_queue/main.py")
 
 
+@pytest.mark.parametrize("command", ["list", "list-dead"])
+def test_list_json_array_matches_legacy_and_filters(tmp_path, command):
+    path = tmp_path / "queue.jsonl"
+    run_cli(path, "enqueue", "fan", "set", '{"name":"风扇","enabled":true}', "--id", "a")
+    run_cli(path, "enqueue", "light", "set", "null", "--id", "b")
+    if command == "list-dead":
+        run_cli(path, "run-demo", "--fail-target", "fan", "--max-attempts", "1")
+    before = {p.name: p.read_bytes() for p in tmp_path.iterdir()}
+    legacy = json_lines(run_cli(path, command).stdout)
+    result = run_cli(path, command, "--json")
+    assert len(result.stdout.splitlines()) == 1
+    assert json.loads(result.stdout) == legacy
+    selected = json.loads(run_cli(path, command, "--json", "--target", "fan", "--limit", "1").stdout)
+    assert [item["action_id"] for item in selected] == ["a"]
+    assert selected[0]["value"] == {"name": "风扇", "enabled": True}
+    assert json.loads(run_cli(path, command, "--json", "--target", "missing").stdout) == []
+    assert {p.name: p.read_bytes() for p in tmp_path.iterdir()} == before
+
+
+@pytest.mark.parametrize("command", ["list", "list-dead"])
+def test_list_json_empty_does_not_create_queue(tmp_path, command):
+    path = tmp_path / "absent" / "queue.jsonl"
+    assert run_cli(path, command, "--json").stdout.strip() == "[]"
+    assert not path.parent.exists()
+
+
+@pytest.mark.parametrize("command", ["list", "list-dead"])
+def test_list_json_corruption_is_not_successful_empty_array(tmp_path, command):
+    path = tmp_path / "queue.jsonl"
+    path.write_text("not json\n", encoding="utf-8")
+    with pytest.raises(subprocess.CalledProcessError) as error:
+        run_cli(path, command, "--json")
+    assert error.value.returncode == 1
+    assert error.value.stdout == ""
+    assert path.read_text(encoding="utf-8") == "not json\n"
+
+
 def test_run_demo_json_success_and_default_output(tmp_path):
     path = tmp_path / "queue.jsonl"
     run_cli(path, "enqueue", "fan", "set", "true", "--id", "json-success")
